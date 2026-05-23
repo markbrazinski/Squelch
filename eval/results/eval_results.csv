@@ -1,0 +1,2 @@
+timestamp,detection_name,tp,fp,fn,total_dataset_size,precision,recall,fp_rate,runtime_ms
+1779473223,WindowsAuth_tuned_v1,21,20,581,1000,0.5122,0.0349,0.4878,169
