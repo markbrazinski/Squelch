@@ -116,6 +116,28 @@ def _load_normalization_map(normalization_csv: Path | None) -> dict[str, str]:
     return m or dict(_IDENTITY_NORM_MAP)
 
 
+def _injected_would_fire(detection_spl: str, event: dict) -> bool:
+    """Does `detection_spl` admit `event`? Bundle 2 Sessions 15-16.
+
+    Assumes detection_spl is the original SPL plus at most one trailing
+    `NOT field IN (...)` clause (the LLM contract enforced by revise.py).
+    Returns False iff event[field] is in that NOT list — the rest of the
+    SPL is treated as a pass, since we cannot run Splunk against a
+    single in-memory event.
+
+    Lazy import of parse_not_filter to avoid a module-level dependency
+    loop with attack_inject (which imports evaluate_detection from us).
+    """
+    try:
+        from .attack_inject import parse_not_filter
+    except ImportError:
+        from attack_inject import parse_not_filter
+    field, values = parse_not_filter(detection_spl)
+    if field is None:
+        return True
+    return event.get(field) not in values
+
+
 def evaluate_detection(
     service,
     detection_name: str,
@@ -124,6 +146,7 @@ def evaluate_detection(
     earliest: str = "-90d",
     latest: str = "now",
     normalization_csv: Path | None = None,
+    injected_events: list[dict] | None = None,
 ) -> EvalResult:
     """Run detection_spl + golden_query, compute confusion matrix and metrics.
 
@@ -173,6 +196,23 @@ def evaluate_detection(
     runtime_ms = int((time.time() - start) * 1000)
     fired_ids = {_event_id(e) for e in detection_rows}
 
+    # 2b. Union in synthetic TPs (Bundle 2 Sessions 15-16). Each injected
+    # event is a TP by construction; whether it would fire is decided by
+    # checking detection_spl's trailing NOT clause structurally in Python
+    # (no second Splunk query for the in-memory set).
+    if injected_events:
+        for ev in injected_events:
+            golden_tp_ids.add(_event_id(ev))
+            if _injected_would_fire(detection_spl, ev):
+                fired_ids.add(_event_id(ev))
+        # Recompute label_confidence to include the synthetic events in
+        # the denominator — they ARE labeled (TPs by construction).
+        labeled = len(golden_tp_ids) + len(golden_fp_ids)
+        label_confidence = (
+            labeled / (len(golden_rows) + len(injected_events))
+            if (golden_rows or injected_events) else 0.0
+        )
+
     # 3. Confusion matrix
     tp = len(fired_ids & golden_tp_ids)
     fp = len(fired_ids & golden_fp_ids)
@@ -185,7 +225,7 @@ def evaluate_detection(
     return EvalResult(
         detection_name=detection_name,
         tp=tp, fp=fp, fn=fn,
-        total_dataset_size=len(golden_rows),
+        total_dataset_size=len(golden_rows) + (len(injected_events) if injected_events else 0),
         precision=precision, recall=recall, fp_rate=fp_rate,
         runtime_ms=runtime_ms,
         timestamp=time.time(),

@@ -275,6 +275,27 @@ This means attack injection isn't just a check — it feeds back into revision g
 #### Session Exit Gate
 Attack injection generates synthetic TPs matching the proposed filter. At least one filter value is caught and excluded. The final revision contains fewer IPs than initially proposed. The narrowing is automatic, not manual.
 
+#### Status: COMPLETE (2026-05-23)
+
+- New `eval/attack_inject.py` module with `parse_not_filter`, `inject_attack`, `narrow_filter`, `_pick_template_event`, `run_adversarial_eval`. Vendored to `squelch_eval/`; exports added to `__init__.py`.
+- `evaluate_detection` gained an `injected_events: list[dict] | None = None` param plus a `_injected_would_fire` helper (deferred-import of `parse_not_filter` to avoid module-level loop). When injected events are supplied, they union into `golden_tp_ids`; their `fired_ids` membership is decided in Python via the structural NOT-filter check — no extra Splunk query for the synthetic set.
+- Adversarial loop: one synthetic TP per iteration, picking a random filter value, deterministic per `(detection_name, revised_spl)` via SHA-256 seeding (NOT Python's `hash()`, which is process-randomized and would shift across Splunk restarts).
+- `run_adversarial_eval` returns `status="ok"` even when hitting `max_iterations`, as long as at least one filter value survives — a final clean eval runs on the narrowed SPL so the metrics are honest. Only the truly empty-filter case returns `no_safe_revision`.
+- `squelch_command.py::_tune` wired in: after `propose_revision` succeeds, the adversarial loop runs before `gate_revision`. KV `eval_after` is now a structured JSON object with `metrics`, `attack_injection_results`, `iterations`, `initial_values`, `final_values`. Output row gains `initial_filter_values`, `final_filter_values`, `attack_injection_excluded`, `injection_iterations`, and `revised_spl` reflects the post-narrowing SPL.
+- **End-to-end smoke (`| squelch mode="tune" search_name="WindowsAuth_AnomalousLogonSource"`)**:
+  - decision=accepted, recall preserved (0.0352 → 0.0352, 0 events lost)
+  - initial_filter_values: `10.0.1.52,10.0.1.50,10.0.1.51,192.168.75.117` (4 values, LLM's first proposal)
+  - final_filter_values: `10.0.1.50` (1 survivor — three IPs each caught a synthetic attack)
+  - attack_injection_excluded: 3
+  - injection_iterations: 3
+  - precision 0.181 → 0.230 (modest lift because only one IP survived adversarial review)
+  - fp_rate 0.819 → 0.770
+  - total runtime 4014ms (under 5s budget)
+- **Determinism**: two back-to-back runs of `| squelch mode="tune"` produced identical `initial_filter_values`, `final_filter_values`, `attack_injection_excluded`, `injection_iterations` (verified via comparison harness).
+- **Unit sanity** on `parse_not_filter`, `narrow_filter`, `_seeded_rng`, `inject_attack` all passed.
+
+Note: the precision lift is smaller than Bundle 1's (0.181 → 0.531 without injection) because attack injection rejects the riskier scanner IPs. This is the *honest* outcome the bundle is supposed to surface. Sessions 17-18 will document this in the demo-fit gap log and decide whether to adjust seeding or the demo script narrative.
+
 ---
 
 ### Sessions 17–18: Integration + Honest Numbers
