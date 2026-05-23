@@ -1,0 +1,9 @@
+detection_name,status,decision,decision_reason,step,precision_before,precision_after,recall_before,recall_after,fp_rate_before,fp_rate_after,label_confidence,initial_filter_values,final_filter_values,attack_injection_excluded,injection_iterations,llm_latency_ms,llm_attempts,total_runtime_ms,error
+WindowsAuth_AnomalousLogonSource,success,accepted,,,0.1809,0.34,0.0352,0.0352,0.8191,0.66,0.783,"10.0.1.52,10.0.1.50,10.0.1.51,192.168.75.117","10.0.1.52,10.0.1.50,192.168.75.117",1,1,2813,1,3898,
+Network_PortScan_Detected,success,accepted,,,0.2551,0.625,0.0518,0.0518,0.7449,0.375,0.783,"10.0.1.51,10.0.1.52,10.0.1.50,192.168.75.78,192.168.102.222","10.0.1.51,10.0.1.52,10.0.1.50,192.168.75.78",1,1,2567,1,3660,
+DNS_TunnelExfil_Heuristic,success,accepted,,,0.2737,0.4561,0.0538,0.0538,0.7263,0.5439,0.783,"10.0.1.51,10.0.1.52,10.0.1.50","10.0.1.51,10.0.1.50",1,1,2101,1,3232,
+Web_SuspiciousUserAgent,success,accepted,,,0.6633,0.8228,0.1346,0.1346,0.3367,0.1772,0.783,"10.0.1.51,10.0.1.52,10.0.1.50,192.168.76.99,192.168.47.197,192.168.193.237,192.168.153.141,192.168.178.234","10.0.1.51,10.0.1.50,192.168.76.99,192.168.47.197,192.168.193.237,192.168.153.141,192.168.178.234",1,1,3252,1,4349,
+Process_RareParentChild,success,accepted,,,0.7451,0.9157,0.1573,0.1573,0.2549,0.0843,0.783,"10.0.1.52,10.0.1.50,10.0.1.51,192.168.233.138,192.168.83.59","10.0.1.52,10.0.1.50,192.168.233.138,192.168.83.59",1,1,2264,1,3452,
+Endpoint_NewServiceInstalled,success,accepted,,,0.8132,0.9136,0.1532,0.1532,0.1868,0.0864,0.783,"10.0.1.50,10.0.1.51,10.0.1.52","10.0.1.50,10.0.1.52",1,1,1873,1,2980,
+Identity_PrivEscalation_Confirmed,error,,,propose,,,,,,,,,,,,0,,,No field has a top cluster with tp_pct == 0; every safe filter would drop recall.
+Data_BulkDownload_Sensitive,success,accepted,,,0.951,0.9798,0.2008,0.2008,0.049,0.0202,0.783,"192.168.165.5,192.168.148.134,192.168.195.16,192.168.66.129","192.168.148.134,192.168.195.16,192.168.66.129",1,1,2167,1,3300,

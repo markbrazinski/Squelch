@@ -344,6 +344,50 @@ Note: the precision lift is smaller than Bundle 1's (0.181 → 0.531 without inj
 #### Session Exit Gate
 Detection 1 runs end-to-end with noisy labels, normalization, and attack injection. Numbers are captured and documented. Pipeline is under 5s. Demo-fit gaps are logged. `baseline_evals.csv` is updated.
 
+#### Status: COMPLETE (2026-05-23)
+
+- **Adversarial loop default capped at 1 iteration.** Sessions 15-16 shipped with `max_iterations=3`, which catches every filter value individually and narrows aggressively (4 IPs → 1, precision 0.18 → 0.23). The spec's intent ("N=1 is enough", "filter narrows to 2 IPs") was always single-shot. Changed `run_adversarial_eval` default in `eval/attack_inject.py`; vendored.
+- **Baselines refreshed in-place.** `eval/results/baseline_evals.csv` regenerated; numbers match Sessions 13-14 exactly (no seeding drift). Sessions 13-14 snapshot preserved at `eval/results/baseline_evals_sessions_13_14.csv`. Non-detection rows (`*_tuned_v1`, `squelch_trigger_high_fp_rate`) stripped — same hygiene step as Sessions 13-14.
+- **Per-detection tune capture written to `eval/results/tune_results_bundle_2.csv`** — 8 rows, one per detection, with full audit-trail columns (decision, precision/recall/fp_rate before/after, label_confidence, initial/final filter values, attack_injection_excluded, injection_iterations, timing).
+
+#### Bundle 2 honest numbers (all 8 detections, 2026-05-23)
+
+| Detection | Decision | Precision Before → After | Recall (held) | FP Rate Before → After | Filter Values (initial → final) |
+|---|---|---|---|---|---|
+| WindowsAuth_AnomalousLogonSource | accepted | 0.181 → 0.340 | 0.035 | 0.819 → 0.660 | 4 → 3 |
+| Network_PortScan_Detected | accepted | 0.255 → 0.625 | 0.052 | 0.745 → 0.375 | 5 → 4 |
+| DNS_TunnelExfil_Heuristic | accepted | 0.274 → 0.456 | 0.054 | 0.726 → 0.544 | **3 → 2** |
+| Web_SuspiciousUserAgent | accepted | 0.663 → 0.823 | 0.135 | 0.337 → 0.177 | 8 → 7 |
+| Process_RareParentChild | accepted | 0.745 → 0.916 | 0.157 | 0.255 → 0.084 | 5 → 4 |
+| Endpoint_NewServiceInstalled | accepted | 0.813 → 0.914 | 0.153 | 0.187 → 0.086 | 3 → 2 |
+| Identity_PrivEscalation_Confirmed | error | — | — | — | `no_safe_cluster` from propose_revision (low-FP, nothing to filter safely) |
+| Data_BulkDownload_Sensitive | accepted | 0.951 → 0.980 | 0.201 | 0.049 → 0.020 | 4 → 3 |
+
+`label_confidence = 0.783` across all detections. All accepted decisions preserve recall exactly. Total runtime per detection: 3.0–4.4s. **DNS is the cleanest demo candidate** — it naturally produces the spec's "3 → 2 CIDRs" narrative.
+
+#### Demo-fit checklist (verified 2026-05-23)
+
+- [x] Beat 1 (data mess visible): `index=notable | stats count by status_label` shows 7 distinct values (`true_positive`, `false_positive`, `resolved`, `closed`, `fp`, `FP - scanner`, blank); WindowsAuth sample table interleaves them visibly.
+- [x] Beat 1 (precision lift visible in `| squelch mode="tune"` output): `precision_before` / `precision_after` columns present on every accepted row.
+- [x] Beat 2 (normalization in saved-search SPL): `[squelch_trigger_high_fp_rate]` exists in `savedsearches.conf` with `| lookup disposition_normalization status_label OUTPUT normalized_label` — visible in the saved-searches UI.
+- [x] Beat 2 (label_confidence honest): every result row includes `label_confidence: 0.783`.
+- [x] Beat 3 (attack injection visible in agent output): `initial_filter_values`, `final_filter_values`, `attack_injection_excluded`, `injection_iterations` all present on every accepted row.
+
+#### Demo-fit gaps (for Phase 9 to address when the demo script is written)
+
+- **Precision targets in the original spec are stale.** Spec targets "~14% → ~87%" for WindowsAuth; actual honest numbers are 18.1% → 34.0%. Other detections lift more (PortScan 25% → 63%, Process 75% → 92%). Demo script should reference the actual `tune_results_bundle_2.csv` numbers.
+- **Best demo subject is DNS, not WindowsAuth.** DNS produces "3 IPs → 2 IPs" cleanly (matching spec narrative). WindowsAuth narrows 4 → 3 with the stray `192.168.x.y` IP surviving, which complicates the story.
+- **Low-FP detections (Identity) return `no_safe_cluster` rather than a tuned filter.** Bundle 3's multi-detection orchestration should surface this as "nothing to tune" rather than as a generic error. The error message itself is already clear: "No field has a top cluster with tp_pct == 0".
+- **`mode="validate"` doesn't accept the normalization lookup.** Bundle 2 was tune-focused. If Bundle 4 wires `validate` into the demo, it needs the same `normalization_csv` threading.
+- **Scheduled trigger remains disabled** (Bundle 1 decision). Demo must manually run the `[squelch_trigger_high_fp_rate]` SPL or paste it into the search bar.
+- **The single-iteration cap means the survivors aren't adversarially tested.** A live attacker pivoting through `10.0.1.50` (the survivor in WindowsAuth) wouldn't be caught. Bundle 4 (label perturbation) or Bundle 5 (temporal holdout) could revisit this.
+
+---
+
+## Bundle 2 status: COMPLETE
+
+All four session pairs done. Data is honest, normalization recovers labels, attack injection narrows filters defensively, and the per-detection numbers are captured for the demo. Next: Bundle 3 (Detection 2/3, Git PR/Issue creation, multi-detection orchestration).
+
 ---
 
 ## Key File Changes Summary

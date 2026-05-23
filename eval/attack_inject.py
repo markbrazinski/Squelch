@@ -122,7 +122,7 @@ def run_adversarial_eval(
     normalization_csv: Path | None,
     events: list[dict],
     rng: random.Random | None = None,
-    max_iterations: int = 3,
+    max_iterations: int = 1,
     earliest: str = "-90d",
     latest: str = "now",
 ) -> dict:
