@@ -33,6 +33,7 @@ from eval_lib import EvalResult, evaluate_detection, load_golden_query  # noqa: 
 CSV_FIELDS = [
     "timestamp", "detection_name", "tp", "fp", "fn",
     "total_dataset_size", "precision", "recall", "fp_rate", "runtime_ms",
+    "label_confidence",
 ]
 
 
@@ -97,6 +98,12 @@ def main() -> int:
         help="Path to golden_dataset.conf",
     )
     parser.add_argument("--golden-stanza", default="default")
+    parser.add_argument(
+        "--normalization-csv",
+        default=str(REPO_ROOT / "lookups" / "disposition_normalization.csv"),
+        help="Path to disposition_normalization.csv (Bundle 2). "
+             "Pass empty string to disable normalization (legacy behavior).",
+    )
     args = parser.parse_args()
 
     if not (args.search_name or args.spl or args.all):
@@ -125,10 +132,12 @@ def main() -> int:
     else:
         targets.append((args.label, args.spl))
 
+    norm_csv = Path(args.normalization_csv) if args.normalization_csv else None
     print(f"golden: {golden_query} ({earliest} → {latest})")
+    print(f"normalization: {norm_csv if norm_csv else '<disabled>'}")
     print(f"writing to: {out_path}")
-    print(f"{'detection':40}  {'tp':>4}  {'fp':>4}  {'fn':>4}  {'prec':>6}  {'rec':>6}  {'fp_r':>5}  {'ms':>5}")
-    print("-" * 100)
+    print(f"{'detection':40}  {'tp':>4}  {'fp':>4}  {'fn':>4}  {'prec':>6}  {'rec':>6}  {'fp_r':>5}  {'conf':>5}  {'ms':>5}")
+    print("-" * 110)
     for name, spl in targets:
         result = evaluate_detection(
             service=service,
@@ -137,11 +146,12 @@ def main() -> int:
             golden_query=golden_query,
             earliest=earliest,
             latest=latest,
+            normalization_csv=norm_csv,
         )
         _append_csv(out_path, result)
         print(f"{name:40}  {result.tp:>4}  {result.fp:>4}  {result.fn:>4}  "
               f"{result.precision:>6.3f}  {result.recall:>6.3f}  "
-              f"{result.fp_rate:>5.2f}  {result.runtime_ms:>5}")
+              f"{result.fp_rate:>5.2f}  {result.label_confidence:>5.2f}  {result.runtime_ms:>5}")
     return 0
 
 

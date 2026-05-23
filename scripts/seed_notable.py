@@ -28,6 +28,38 @@ import splunklib.client as splunk_client
 
 SCANNER_IPS = ["10.0.1.50", "10.0.1.51", "10.0.1.52"]
 
+# Bundle 2 Sessions 11-12: noisy `status_label` values that look like a
+# real SOC's notable index. TPs don't get creative mislabels — they're
+# either `true_positive` or unlabeled. FPs are spread across 6 formats
+# per spec, with a small share also unlabeled.
+_FP_LABEL_CHOICES = (
+    "false_positive",
+    "resolved",
+    "closed",
+    "fp",
+    "FP - scanner",
+    "",
+)
+_FP_LABEL_WEIGHTS = (40, 16, 14, 10, 10, 10)
+_BLANK_ALL_RATE = 0.20  # share of *all* events (TP or FP) with no label
+
+
+def _pick_status_label(is_fp: bool) -> str:
+    """Two-stage draw matching the Bundle 2 spec distribution.
+
+    1. 20% of all events get blanked regardless of TP/FP ("analyst never
+       looked at it").
+    2. FPs that survive step 1 draw from 6 weighted formats, one of which
+       is itself a blank (per-FP 10% blank share).
+    3. TPs that survive step 1 are always `true_positive` — analysts
+       don't mislabel TPs creatively, they just sometimes skip them.
+    """
+    if random.random() < _BLANK_ALL_RATE:
+        return ""
+    if is_fp:
+        return random.choices(_FP_LABEL_CHOICES, weights=_FP_LABEL_WEIGHTS, k=1)[0]
+    return "true_positive"
+
 # (search_name, rule_name, target_fp_rate, urgency)
 DETECTIONS = [
     ("WindowsAuth_AnomalousLogonSource", "WindowsAuth_AnomalousLogonSource", 0.85, "medium"),
@@ -56,7 +88,7 @@ def _load_env(env_path: Path) -> None:
 def _gen_event(detection, now_unix: int) -> dict:
     search_name, rule_name, fp_rate, urgency = detection
     is_fp = random.random() < fp_rate
-    status_label = "false_positive" if is_fp else "true_positive"
+    status_label = _pick_status_label(is_fp)
     if is_fp and random.random() < 0.78:
         src_ip = random.choice(SCANNER_IPS)
         disposition = "FP: scanner noise"
@@ -131,7 +163,19 @@ def main() -> int:
         )
         while not job.is_done():
             time.sleep(0.5)
-        print(f"  delete job done")
+        # `| delete` requires the `can_delete` capability; without it, the
+        # job completes silently with 0 results and the index keeps stale
+        # data. Surface that failure loudly — silent stacking of cohorts
+        # broke Bundle 2 Session 11-12 once already.
+        msgs = job.content.get("messages") or {}
+        fatal = msgs.get("fatal") or msgs.get("error") or []
+        if fatal:
+            print(f"  delete FAILED: {fatal[0]}", file=sys.stderr)
+            print(f"  hint: grant the `can_delete` capability to your role "
+                  f"(Settings → Roles → admin → Capabilities → can_delete).",
+                  file=sys.stderr)
+            return 2
+        print(f"  delete job done (events removed: {job['eventCount']})")
 
     index = service.indexes[args.index]
     now_unix = int(time.time())

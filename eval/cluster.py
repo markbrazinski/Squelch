@@ -71,10 +71,17 @@ def load_lookup(csv_path: Path | None) -> dict[str, str]:
     return out
 
 
+_IDENTITY_NORM_MAP = {
+    "true_positive": "true_positive",
+    "false_positive": "false_positive",
+}
+
+
 def cluster_fps(events: list[dict],
                 fields: tuple[str, ...] = FIELDS_DEFAULT,
                 lookup_csv_path: Path | None = None,
-                lookup_name: str = "scanner_ips") -> dict:
+                lookup_name: str = "scanner_ips",
+                normalization_csv: Path | None = None) -> dict:
     """Per-field FP clusters with recall-risk and lookup annotations.
 
     Args:
@@ -85,6 +92,10 @@ def cluster_fps(events: list[dict],
         lookup_name: tag written to lookup_match. Lets Bundle 2 wire
             additional lookups (e.g. service_accounts) without changing
             the function signature.
+        normalization_csv: optional CSV path mapping noisy `status_label`
+            values to canonical "true_positive"/"false_positive". Bundle 2
+            Sessions 13-14. When None, only literal canonical labels count
+            (Bundle 1 behavior).
 
     Returns:
         {
@@ -98,9 +109,15 @@ def cluster_fps(events: list[dict],
         }
     """
     lookup = load_lookup(lookup_csv_path)
+    norm_map = load_lookup(normalization_csv) if normalization_csv else dict(_IDENTITY_NORM_MAP)
+    if not norm_map:
+        norm_map = dict(_IDENTITY_NORM_MAP)
 
-    total_fps = sum(1 for e in events if e.get("status_label") == "false_positive")
-    total_tps = sum(1 for e in events if e.get("status_label") == "true_positive")
+    def _norm(e: dict) -> str | None:
+        return norm_map.get(e.get("status_label"))
+
+    total_fps = sum(1 for e in events if _norm(e) == "false_positive")
+    total_tps = sum(1 for e in events if _norm(e) == "true_positive")
 
     by_field: dict[str, list[dict]] = {}
     for fld in fields:
@@ -110,9 +127,10 @@ def cluster_fps(events: list[dict],
             val = e.get(fld)
             if val is None or val == "":
                 continue
-            if e["status_label"] == "false_positive":
+            normalized = _norm(e)
+            if normalized == "false_positive":
                 fp_counter[val] += 1
-            elif e["status_label"] == "true_positive":
+            elif normalized == "true_positive":
                 tp_counter[val] += 1
 
         cluster_rows = []

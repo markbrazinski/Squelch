@@ -1,0 +1,10 @@
+timestamp,detection_name,tp,fp,fn,total_dataset_size,precision,recall,fp_rate,runtime_ms
+1779541681,DNS_TunnelExfil_Heuristic,26,33,457,1000,0.4407,0.0538,0.5593,128
+1779541681,Data_BulkDownload_Sensitive,97,1,386,1000,0.9898,0.2008,0.0102,139
+1779541681,Endpoint_NewServiceInstalled,74,10,409,1000,0.8810,0.1532,0.1190,140
+1779541681,Identity_PrivEscalation_Confirmed,103,0,380,1000,1.0000,0.2133,0.0000,145
+1779541682,Network_PortScan_Detected,25,33,458,1000,0.4310,0.0518,0.5690,142
+1779541682,Process_RareParentChild,76,11,407,1000,0.8736,0.1573,0.1264,131
+1779541682,Web_SuspiciousUserAgent,65,12,418,1000,0.8442,0.1346,0.1558,152
+1779541683,WindowsAuth_AnomalousLogonSource,17,40,466,1000,0.2982,0.0352,0.7018,132
+1779541683,WindowsAuth_AnomalousLogonSource_tuned_v1,17,7,466,1000,0.7083,0.0352,0.2917,141

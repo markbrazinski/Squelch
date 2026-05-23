@@ -29,6 +29,10 @@ class EvalResult:
     fp_rate: float
     runtime_ms: int
     timestamp: float
+    # Fraction of golden events whose status_label normalized to TP or FP.
+    # 1.0 when every event was usable; lower when blanks / unmapped labels
+    # had to be excluded. Surfaced to the | squelch result row + KV trace.
+    label_confidence: float = 1.0
     # Identity sets — needed by gate_revision to compute events_lost.
     # Not serialized to CSV (CSV consumers don't need them).
     fired_ids: frozenset[str] = field(default_factory=frozenset, repr=False)
@@ -46,6 +50,7 @@ class EvalResult:
             "recall": f"{self.recall:.4f}",
             "fp_rate": f"{self.fp_rate:.4f}",
             "runtime_ms": self.runtime_ms,
+            "label_confidence": f"{self.label_confidence:.4f}",
         }
 
     def as_metric_dict(self) -> dict:
@@ -59,6 +64,7 @@ class EvalResult:
             "fp_rate": round(self.fp_rate, 4),
             "runtime_ms": self.runtime_ms,
             "timestamp": int(self.timestamp),
+            "label_confidence": round(self.label_confidence, 4),
         }
 
 
@@ -87,6 +93,29 @@ def _event_id(event: dict) -> str:
     return event.get("_cd") or event.get("_serial") or repr(event)
 
 
+_IDENTITY_NORM_MAP = {
+    "true_positive": "true_positive",
+    "false_positive": "false_positive",
+}
+
+
+def _load_normalization_map(normalization_csv: Path | None) -> dict[str, str]:
+    """CSV path → {raw_label: normalized_label}. None / missing → identity map.
+
+    Deferred import of load_lookup from .cluster to avoid a module-level
+    circular import (cluster imports _read_json_results from us). The
+    try/except mirrors the same dual-mode pattern cluster.py uses.
+    """
+    if normalization_csv is None:
+        return dict(_IDENTITY_NORM_MAP)
+    try:
+        from .cluster import load_lookup
+    except ImportError:
+        from cluster import load_lookup
+    m = load_lookup(normalization_csv)
+    return m or dict(_IDENTITY_NORM_MAP)
+
+
 def evaluate_detection(
     service,
     detection_name: str,
@@ -94,16 +123,24 @@ def evaluate_detection(
     golden_query: str,
     earliest: str = "-90d",
     latest: str = "now",
+    normalization_csv: Path | None = None,
 ) -> EvalResult:
     """Run detection_spl + golden_query, compute confusion matrix and metrics.
 
-    golden_query MUST return events with a `status_label` field of
-    `true_positive` or `false_positive`. Anything else is ignored from
-    the FN computation.
+    golden_query returns events with a `status_label` field. When
+    normalization_csv is provided, raw labels are mapped through it
+    (e.g. "resolved" → "false_positive"); blank / unmapped labels are
+    excluded from both TP and FP counts. label_confidence reports the
+    share of golden events whose label was usable.
+
+    Without normalization_csv, only literal "true_positive" /
+    "false_positive" count (Bundle 1 behavior preserved).
 
     detection_spl is whatever the saved search runs (the "detection
     fires on these events" definition).
     """
+    norm_map = _load_normalization_map(normalization_csv)
+
     # 1. Golden ground truth
     # Both queries get wrapped with `| fields ...` so search-time extracted
     # fields (status_label, etc.) are surfaced to JSONResultsReader.
@@ -113,8 +150,17 @@ def evaluate_detection(
         output_mode="json", count=0,
     )
     golden_rows = _read_json_results(golden_stream)
-    golden_tp_ids = {_event_id(e) for e in golden_rows if e.get("status_label") == "true_positive"}
-    golden_fp_ids = {_event_id(e) for e in golden_rows if e.get("status_label") == "false_positive"}
+    golden_tp_ids: set[str] = set()
+    golden_fp_ids: set[str] = set()
+    for e in golden_rows:
+        normalized = norm_map.get(e.get("status_label"))
+        if normalized == "true_positive":
+            golden_tp_ids.add(_event_id(e))
+        elif normalized == "false_positive":
+            golden_fp_ids.add(_event_id(e))
+
+    labeled = len(golden_tp_ids) + len(golden_fp_ids)
+    label_confidence = labeled / len(golden_rows) if golden_rows else 0.0
 
     # 2. Detection fires — _cd alone is enough; we just need identity
     detection_wrapped = f"{detection_spl} | fields _cd"
@@ -143,6 +189,7 @@ def evaluate_detection(
         precision=precision, recall=recall, fp_rate=fp_rate,
         runtime_ms=runtime_ms,
         timestamp=time.time(),
+        label_confidence=label_confidence,
         fired_ids=frozenset(fired_ids),
         golden_tp_ids=frozenset(golden_tp_ids),
     )
@@ -187,7 +234,8 @@ def evaluate_recall_preserved(baseline: EvalResult, proposed: EvalResult) -> boo
 
 
 def snapshot_baseline(service, detection_name: str, golden_conf_path: Path,
-                      golden_stanza: str = "default") -> EvalResult:
+                      golden_stanza: str = "default",
+                      normalization_csv: Path | None = None) -> EvalResult:
     """Run a saved search's current SPL against the golden dataset.
 
     Returns the EvalResult the pipeline persists to detection_lineage KV
@@ -202,4 +250,5 @@ def snapshot_baseline(service, detection_name: str, golden_conf_path: Path,
         golden_query=golden_query,
         earliest=earliest,
         latest=latest,
+        normalization_csv=normalization_csv,
     )
