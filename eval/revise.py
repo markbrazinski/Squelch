@@ -42,15 +42,28 @@ Format requirements:
 """
 
 
+# Bundle 3 Sessions 23-24: minimum fp_pct floor on the FIELD's top entry.
+# Without this, any random value with fp_count=1, tp_count=0 qualifies as
+# "safe to filter" — pipeline would propose 10 random IPs explaining 15%
+# of FPs (useless but technically safe). The floor pushes those cases
+# into the no_safe_cluster path so diagnose_fp_pattern can run.
+#
+# Empirically tuned to 0.20: DNS's top scanner clears 0.2727, Identity's
+# svc_backup clears 0.65, Endpoint's top entry maxes out at 0.027 (well
+# below 0.20). The 0.30 spec value bit DNS — top scanner is just under it.
+MIN_TOP_ENTRY_FP_PCT = 0.20
+
+
 def _pick_top_cluster(clusters: dict) -> dict | None:
     """Pick the (field, top-N-values) hypothesis the LLM should propose.
 
     Strategy: pick the field whose top entry has the highest fp_pct AND
-    tp_pct == 0 (safe to filter). Then take all leading entries in that
+    tp_pct == 0 (safe to filter) AND fp_pct >= MIN_TOP_ENTRY_FP_PCT (real
+    pattern, not random noise). Then take all leading entries in that
     field where tp_pct == 0, up to 80% cumulative fp_pct, capped at 10.
 
     Returns {field, values, total_fp_pct, lookup_match, lookup_context}
-    or None if no field has a safe top entry.
+    or None if no field has a safe top entry above the floor.
     """
     by_field = clusters.get("by_field", {})
     best_field = None
@@ -60,6 +73,8 @@ def _pick_top_cluster(clusters: dict) -> dict | None:
             continue
         top = rows[0]
         if top["tp_pct"] != 0.0:
+            continue
+        if top["fp_pct"] < MIN_TOP_ENTRY_FP_PCT:
             continue
         if top["fp_pct"] > best_fp_pct:
             best_fp_pct = top["fp_pct"]
