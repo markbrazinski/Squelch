@@ -398,3 +398,79 @@ The Squelch repo at `github.com/markbrazinski/Squelch`. PRs and Issues land here
 | Phase 9: Polish + Ship | 43–50 | Architecture diagram, recording, Devpost, README, submit |
 
 With Bundle 3 complete at session 28, the submission is an 8-9/10. Bundle 4 pushes to 9/10. Bundle 5 is 10/10 polish. Phase 9 is shipping.
+
+---
+
+## Sessions Status Blocks
+
+Per-session-pair status, populated as each pair closes. Scannable; one line each.
+
+- **Sessions 19–20** ✅ Complete. Per-detection FP patterns in `seed_notable.py`. `service_accounts.csv` lookup. `mirror_lookups.sh` automation. DNS regression preserved. Baselines regenerated; Bundle 2 baseline preserved as `baseline_evals_bundle_2.csv`.
+- **Sessions 21–22** ✅ Complete. `load_lookup` promoted to `eval/utils.py` (Bundle 2 [[load_lookup_placement]] follow-through). `cluster_fps` now takes `field_lookups: dict[str, Path]` (multi-lookup). Single-value bypass in `run_adversarial_eval`. Identity tunes accepted with svc_backup filter (was no_safe_revision pre-bypass).
+- **Sessions 23–24** ✅ Complete. `MIN_TOP_ENTRY_FP_PCT = 0.20` floor in `_pick_top_cluster` (tuned 0.30 → 0.20 mid-execution because DNS scanners measured at 0.273). `diagnose_fp_pattern()` field-coverage analysis. Decline-to-tune branch in `_tune()` produces `field_extraction_gap` evidence for Endpoint.
+- **Sessions 25–26** ✅ Complete. `eval/github_integration.py` (PR + Issue creation, body builders). `_fetch_github_token` mirrors Gemini pattern. `_tune()` → `_tune()` + `_tune_one()` refactor with per-target try/except (multi-detection mode). KV row patched with `pr_url`/`issue_url`/`github_error` after GitHub call. Known constraint: same-branch 422 on subsequent accepted detections in a multi-detection invocation (Bundle 4 fixes).
+- **Sessions 27–28** ✅ Complete. 4 retroactive commits land on `main` (one per session pair). `scripts/capture_tune_results.py` reusable KV→CSV. `eval/results/tune_results_bundle_3.csv` captured (8 detections, all artifacts populated). Demo-fit Gap Log below. `docs/bundle-3-recording-recipe.md` written. Bundle 3 shippable; video recording is a separate human-driven session.
+
+---
+
+## Sessions 27–28 Dry Run — Actual Numbers
+
+Captured 2026-05-23 via `./scripts/capture_tune_results.py` after a sequential 8-detection dry run with PR-close between accepts. All 8 detections produced fresh KV rows and GitHub artifacts; zero `github_error`.
+
+| Detection | Decision | FP rate | Precision | Recall | Artifact |
+|---|---|---|---|---|---|
+| `Identity_PrivEscalation_Confirmed` | accepted | 0.802 → 0.583 | 0.198 → 0.417 | 0.0588 → 0.0588 | PR #15 |
+| `DNS_TunnelExfil_Heuristic` | accepted | 0.710 → 0.526 | 0.290 → 0.474 | 0.0794 → 0.0794 | PR #11 |
+| `Endpoint_NewServiceInstalled` | **declined** | 0.705 → — | 0.295 → — | 0.0912 → — | Issue #14 (field_extraction_gap) |
+| `WindowsAuth_AnomalousLogonSource` | accepted | 0.874 → 0.769 | 0.126 → 0.231 | 0.0353 → 0.0353 | PR #9 |
+| `Network_PortScan_Detected` | accepted | 0.777 → 0.410 | 0.223 → 0.590 | 0.0676 → 0.0676 | PR #10 |
+| `Web_SuspiciousUserAgent` | accepted | 0.380 → 0.197 | 0.620 → 0.803 | 0.1676 → 0.1676 | PR #12 |
+| `Process_RareParentChild` | accepted | 0.233 → 0.127 | 0.767 → 0.873 | 0.2029 → 0.2029 | PR #13 |
+| `Data_BulkDownload_Sensitive` | accepted | 0.019 → 0.010 | 0.981 → 0.990 | 0.2971 → 0.2971 | PR #16 |
+
+Every accepted tune preserves recall exactly. Largest precision lifts: PortScan **2.6×** (0.22 → 0.59), Identity **2.1×** (0.20 → 0.42), DNS **1.6×** (0.29 → 0.47). Endpoint's declined Issue carries full diagnosis evidence (46% empty `dest_ip`, 100% correlated with `sourcetype_tag=svc_install_log`).
+
+---
+
+## Demo-fit Gap Log (Sessions 27–28)
+
+`docs/demo-script.md` was written before Bundle 3's detection reassignment (spec line 19–23) and before Bundle 4 scope was carved out. This log captures the drift between what the script promises and what the Bundle 3 pipeline actually delivers, so the recording session knows what to adjust.
+
+### Critical (script must change OR demo can't be recorded as written)
+
+| # | Beat | Script | Pipeline reality | Resolution |
+|---|---|---|---|---|
+| **D1** | 1 (Payoff) | `WindowsAuth` "precision 14 → 87, 340 → 19 notables" | `WindowsAuth` precision **0.126 → 0.231**, 95 fired → 26 fired. The 14→87 number was aspirational, never matched a real run. | Pivot to a real number. Options: **PortScan (0.22 → 0.59, 2.6× lift)** is the strongest; **Identity (0.20 → 0.42, 2.1×)** is dramatic and Beat 1's "your analysts stopped reading them" still lands at 80% FP rate; **DNS (0.29 → 0.47)** moderate but is also Beat 3's subject. **Recommended:** lead with PortScan or Identity — both pair the "FP rate above 70%" framing with a real precision lift in the demo arc. |
+| **D2** | 3 (Det 1) | `WindowsAuth_AnomalousLogonSource` (3 scanner CIDRs, 2 after narrowing) | `DNS_TunnelExfil_Heuristic` is the Bundle 3 demo's Detection 1. Its 3-scanner-IP-narrowing-to-2 narrative matches the spec exactly. | Update script to name `DNS_TunnelExfil_Heuristic`. Numbers match the 3→2 narrowing; only the detection name needs swapping. |
+| **D5** | 5 (Det 3, climax) | `DNS_TunnelExfil_Heuristic` + `sourcetype=dns_proxy_v2` + 45% empty `dest_ip` | `Endpoint_NewServiceInstalled` + `sourcetype_tag=svc_install_log` + **46% empty `dest_ip`** (matches percentage almost exactly) | Update script: detection name + sourcetype tag wrong, percentages right. The climax line "the data feeding it is broken" still lands; rephrase to "every empty `dest_ip` traces back to one sourcetype — `svc_install_log`." |
+
+### High (Bundle 4 scope promised in script)
+
+| # | Beat | Script promises | Bundle 3 actually has | Resolution |
+|---|---|---|---|---|
+| **D3** | 3, 4, 5 | Multi-hypothesis display per detection (`cluster: X% ✓`/`cluster: Y% ✗`) | Single winner from `_pick_top_cluster`; rejected hypotheses not surfaced in the prompt or PR | Cut the `cluster: X% ✗` mock displays. Bundle 3 narration can claim "the agent picks the strongest hypothesis above a 20% explanatory-power floor" without listing rejected ones. Multi-hypothesis is on the Bundle 4 roadmap (spec line 382). |
+| **D6** | 3, 4 | "label perturbation PASS" | No label-perturbation step in pipeline | Drop the phrase entirely. Bundle 3 has label *normalization* (different feature) and attack injection (different feature) — both real and worth narrating; perturbation is Bundle 4 (spec line 384). |
+| **D7** | 6 (PRs) | "Decision trail: 3 hypotheses evaluated, 2 revision candidates considered, conservative selected (attack injection caught aggressive candidate)" in PR body | Single top hypothesis, single revision, attack-injection record. PR body has: SPL diff, eval table, attack-injection list, single cluster annotation | Update narration to describe what the PR body actually shows: "SPL diff, before/after metrics, the attack-injection record, the cluster annotation." Full decision trail is Bundle 4 (spec line 383). |
+
+### Medium (cosmetic or operational)
+
+| # | Beat | Note | Resolution |
+|---|---|---|---|
+| **D4** | 4 (Det 2) | Script: `PrivilegeEscalation_UnusualServiceAccess`. Actual: `Identity_PrivEscalation_Confirmed`. Numbers (65% `svc_backup`) match exactly. | Update name in script. Behavioral narrative is identical. |
+| **D8** | All | Multi-detection invocation hits 422 on subsequent accepted detections (shared `squelch/proposals` head). | Two recording paths: **(recommended)** swap detection order to Identity → DNS → Endpoint — Identity first, no prior PR conflict; close Identity PR in the jump cut between beats; Endpoint third (Issue, no conflict). This is also a stronger story arc (behavioral → IP → "don't tune"). **(alternative)** keep script order, close DNS PR via a separate browser tab between beats 3 and 4. Bundle 4's per-detection-branch upgrade eliminates the constraint. |
+
+### Recording decision required
+
+The biggest call is **D1 (the payoff)**. Three options, ranked by dramatic strength:
+
+1. **Lead with PortScan** — precision 0.22 → 0.59 (**2.6× lift**), the largest in the dry run. fp_rate 0.78 → 0.41 also strong. Numbers feel substantial without overpromising.
+2. **Lead with Identity** — precision 0.20 → 0.42 (**2.1× lift**), pairs naturally with the "your analysts stopped reading them" line at 80% FP rate. Has the bonus that the cross-reference-lookup beat (Beat 4) gets to call back to "you saw it in Beat 1."
+3. **Cherry-pick across detections** — "Two PRs that lift precision by 60% on average, one Issue that catches a data-quality bug." Composite but harder to verify on a single search-results screenshot.
+
+**Default suggestion: Option 1 (lead with PortScan).** Largest verifiable lift; the dry run's strongest single number. DNS becomes Beat 3 (the warm-up) and the arc preserves its escalation shape (IP scanner cluster → behavioral cluster → decline-to-tune).
+
+---
+
+## Sessions 27–28 Recording Recipe Pointer
+
+The video production setup (window layout, browser tabs, beat recording order, post-record sanity) lives in `docs/bundle-3-recording-recipe.md`. The narration script (`docs/demo-script.md`) is the source for what the narrator says; the recipe handles the mechanics; this gap log handles what's stale.
