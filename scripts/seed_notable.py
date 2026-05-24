@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 """Seed `index=notable` with synthetic FP/TP-labelled events.
 
-Used by the Squelch eval harness + demo. Distribution per Bundle 1 plan:
-  - 2-3 searches with FP rate >70% (Squelch triggers)
-  - 2-3 with 20-40% (healthy)
-  - 1-2 with <5% (pristine)
+Bundle 3 Sessions 19-20: per-detection FP patterns. Each detection's FPs
+follow one of three shapes:
 
-FP cluster pattern baked in: 78% of FPs from one of 3 "scanner" IPs, so
-Squelch's clustering step has a real signal to find.
+  scanner_ip       — 78% draw from SCANNER_IPS pool (Bundle 1/2 behavior)
+  service_account  — 65% set user="svc_backup" (Detection 2)
+  extraction_gap   — 45% set dest_ip="" + sourcetype_tag="svc_install_log"
+                     (Detection 3 — no dominant single-field cluster)
+
+DNS/WindowsAuth/PortScan and the three low-FP detections keep scanner_ip.
+DETECTION_FP_PATTERNS below is the single source of truth for both the
+per-detection FP rate and the FP shape.
 
 Run:
-    python scripts/seed_notable.py --count 1000
+    python scripts/seed_notable.py --count 1000 --clear-first
 
 Env (from .env at repo root):
     SPLUNK_HOST, SPLUNK_PORT, SPLUNK_ADMIN_USER, SPLUNK_ADMIN_PASSWORD
@@ -43,6 +47,13 @@ _FP_LABEL_CHOICES = (
 _FP_LABEL_WEIGHTS = (40, 16, 14, 10, 10, 10)
 _BLANK_ALL_RATE = 0.20  # share of *all* events (TP or FP) with no label
 
+# svc_backup is FP-exclusive for Identity_PrivEscalation_Confirmed. Keep
+# it out of the TP user pool so the single-value bypass in Sessions 21-22
+# is safe.
+_TP_USER_POOL = ("alice", "bob", "carol", "dave", "svc-jenkins")
+_FP_USER_POOL_GENERIC = ("alice", "bob", "carol", "dave", "svc-jenkins")
+_EXTRACTION_GAP_SOURCETYPES = ("winsec", "wineventlog", "iis", "syslog")
+
 
 def _pick_status_label(is_fp: bool) -> str:
     """Two-stage draw matching the Bundle 2 spec distribution.
@@ -60,17 +71,32 @@ def _pick_status_label(is_fp: bool) -> str:
         return random.choices(_FP_LABEL_CHOICES, weights=_FP_LABEL_WEIGHTS, k=1)[0]
     return "true_positive"
 
-# (search_name, rule_name, target_fp_rate, urgency)
+
+# (search_name, rule_name, urgency). FP rate now lives in
+# DETECTION_FP_PATTERNS below — single source of truth.
 DETECTIONS = [
-    ("WindowsAuth_AnomalousLogonSource", "WindowsAuth_AnomalousLogonSource", 0.85, "medium"),
-    ("Network_PortScan_Detected",       "Network_PortScan_Detected",       0.78, "low"),
-    ("DNS_TunnelExfil_Heuristic",       "DNS_TunnelExfil_Heuristic",       0.72, "high"),
-    ("Web_SuspiciousUserAgent",         "Web_SuspiciousUserAgent",         0.35, "low"),
-    ("Process_RareParentChild",         "Process_RareParentChild",         0.28, "medium"),
-    ("Endpoint_NewServiceInstalled",    "Endpoint_NewServiceInstalled",    0.22, "medium"),
-    ("Identity_PrivEscalation_Confirmed", "Identity_PrivEscalation_Confirmed", 0.03, "critical"),
-    ("Data_BulkDownload_Sensitive",     "Data_BulkDownload_Sensitive",     0.04, "high"),
+    ("WindowsAuth_AnomalousLogonSource", "WindowsAuth_AnomalousLogonSource", "medium"),
+    ("Network_PortScan_Detected",       "Network_PortScan_Detected",       "low"),
+    ("DNS_TunnelExfil_Heuristic",       "DNS_TunnelExfil_Heuristic",       "high"),
+    ("Web_SuspiciousUserAgent",         "Web_SuspiciousUserAgent",         "low"),
+    ("Process_RareParentChild",         "Process_RareParentChild",         "medium"),
+    ("Endpoint_NewServiceInstalled",    "Endpoint_NewServiceInstalled",    "medium"),
+    ("Identity_PrivEscalation_Confirmed", "Identity_PrivEscalation_Confirmed", "critical"),
+    ("Data_BulkDownload_Sensitive",     "Data_BulkDownload_Sensitive",     "high"),
 ]
+
+DETECTION_FP_PATTERNS = {
+    # Demo detections (Bundle 3)
+    "DNS_TunnelExfil_Heuristic":         {"fp_rate": 0.71, "pattern": "scanner_ip"},
+    "Identity_PrivEscalation_Confirmed": {"fp_rate": 0.72, "pattern": "service_account"},
+    "Endpoint_NewServiceInstalled":      {"fp_rate": 0.72, "pattern": "extraction_gap"},
+    # Pipeline workhorses — scanner_ip preserved from Bundle 2
+    "WindowsAuth_AnomalousLogonSource":  {"fp_rate": 0.83, "pattern": "scanner_ip"},
+    "Network_PortScan_Detected":         {"fp_rate": 0.74, "pattern": "scanner_ip"},
+    "Web_SuspiciousUserAgent":           {"fp_rate": 0.34, "pattern": "scanner_ip"},
+    "Process_RareParentChild":           {"fp_rate": 0.27, "pattern": "scanner_ip"},
+    "Data_BulkDownload_Sensitive":       {"fp_rate": 0.03, "pattern": "scanner_ip"},
+}
 
 
 def _load_env(env_path: Path) -> None:
@@ -85,39 +111,103 @@ def _load_env(env_path: Path) -> None:
         os.environ.setdefault(k, v)
 
 
-def _gen_event(detection, now_unix: int) -> dict:
-    search_name, rule_name, fp_rate, urgency = detection
-    is_fp = random.random() < fp_rate
-    status_label = _pick_status_label(is_fp)
-    if is_fp and random.random() < 0.78:
-        src_ip = random.choice(SCANNER_IPS)
-        disposition = "FP: scanner noise"
-    elif is_fp:
-        src_ip = f"192.168.{random.randint(0, 254)}.{random.randint(0, 254)}"
-        disposition = random.choice([
+def _random_internal_ip() -> str:
+    return f"10.{random.randint(20, 200)}.{random.randint(0, 254)}.{random.randint(0, 254)}"
+
+
+def _random_192_ip() -> str:
+    return f"192.168.{random.randint(0, 254)}.{random.randint(0, 254)}"
+
+
+def _apply_tp_defaults(event: dict) -> None:
+    event["src_ip"] = _random_internal_ip()
+    event["user"] = random.choice(_TP_USER_POOL)
+    event["dest_ip"] = _random_internal_ip()
+    event["sourcetype_tag"] = random.choice(_EXTRACTION_GAP_SOURCETYPES)
+    event["disposition"] = random.choice([
+        "TP: confirmed lateral movement",
+        "TP: credential abuse",
+        "TP: suspicious external exfil",
+    ])
+
+
+def _fp_scanner_ip(event: dict) -> None:
+    if random.random() < 0.78:
+        event["src_ip"] = random.choice(SCANNER_IPS)
+        event["disposition"] = "FP: scanner noise"
+    else:
+        event["src_ip"] = _random_192_ip()
+        event["disposition"] = random.choice([
             "FP: known maintenance window",
             "FP: legitimate admin activity",
             "FP: business-hours batch job",
         ])
+    event["user"] = random.choice(_FP_USER_POOL_GENERIC)
+    event["dest_ip"] = _random_internal_ip()
+    event["sourcetype_tag"] = random.choice(_EXTRACTION_GAP_SOURCETYPES)
+
+
+def _fp_service_account(event: dict) -> None:
+    if random.random() < 0.65:
+        event["user"] = "svc_backup"
+        event["disposition"] = "FP: known service account activity"
     else:
-        src_ip = f"10.{random.randint(20, 200)}.{random.randint(0, 254)}.{random.randint(0, 254)}"
-        disposition = random.choice([
-            "TP: confirmed lateral movement",
-            "TP: credential abuse",
-            "TP: suspicious external exfil",
+        event["user"] = random.choice(_FP_USER_POOL_GENERIC)
+        event["disposition"] = random.choice([
+            "FP: known maintenance window",
+            "FP: legitimate admin activity",
+            "FP: business-hours batch job",
         ])
-    return {
+    # No scanner IPs: this detection's clustering must not surface them.
+    event["src_ip"] = _random_192_ip()
+    event["dest_ip"] = _random_internal_ip()
+    event["sourcetype_tag"] = random.choice(_EXTRACTION_GAP_SOURCETYPES)
+
+
+def _fp_extraction_gap(event: dict) -> None:
+    if random.random() < 0.45:
+        event["dest_ip"] = ""
+        event["sourcetype_tag"] = "svc_install_log"
+        event["disposition"] = "FP: extraction gap"
+    else:
+        event["dest_ip"] = _random_internal_ip()
+        event["sourcetype_tag"] = random.choice(_EXTRACTION_GAP_SOURCETYPES)
+        event["disposition"] = random.choice([
+            "FP: known maintenance window",
+            "FP: legitimate admin activity",
+            "FP: business-hours batch job",
+        ])
+    event["src_ip"] = _random_192_ip()
+    event["user"] = random.choice(_FP_USER_POOL_GENERIC)
+
+
+_FP_PATTERN_DISPATCH = {
+    "scanner_ip":      _fp_scanner_ip,
+    "service_account": _fp_service_account,
+    "extraction_gap":  _fp_extraction_gap,
+}
+
+
+def _gen_event(detection, now_unix: int) -> dict:
+    search_name, rule_name, urgency = detection
+    pattern_cfg = DETECTION_FP_PATTERNS[search_name]
+    is_fp = random.random() < pattern_cfg["fp_rate"]
+    status_label = _pick_status_label(is_fp)
+
+    event = {
         "search_name": search_name,
         "rule_name": rule_name,
         "urgency": urgency,
         "status_label": status_label,
         "owner": random.choice(["analyst1", "analyst2", "analyst3"]),
-        "disposition": disposition,
-        "src_ip": src_ip,
         "dest": f"10.50.{random.randint(0, 50)}.{random.randint(0, 254)}",
-        "user": random.choice(["alice", "bob", "svc-jenkins", "carol", "dave"]),
         "_time": now_unix - random.randint(0, 30 * 86400),
     }
+    if is_fp:
+        _FP_PATTERN_DISPATCH[pattern_cfg["pattern"]](event)
+    else:
+        _apply_tp_defaults(event)
+    return event
 
 
 def _event_to_kv_string(event: dict) -> str:
