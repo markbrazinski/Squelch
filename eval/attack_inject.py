@@ -144,6 +144,28 @@ def run_adversarial_eval(
 
     _, initial_values = parse_not_filter(revised_spl)
 
+    # Bundle 3 Sessions 21-22: single-value bypass. With one value, the
+    # only narrowing outcome is "remove everything"; injection is theater.
+    # The recall gate downstream is the safety net.
+    if len(initial_values) <= 1:
+        clean_result = evaluate_detection(
+            service=service,
+            detection_name=f"{detection_name}_adv_skipped",
+            detection_spl=revised_spl,
+            golden_query=golden_query,
+            earliest=earliest, latest=latest,
+            normalization_csv=normalization_csv,
+        )
+        return {
+            "status": "ok",
+            "final_spl": revised_spl,
+            "final_eval": clean_result,
+            "initial_values": initial_values,
+            "final_values": initial_values,
+            "injection_results": [],
+            "iterations": 0,
+        }
+
     spl = revised_spl
     caught_so_far: list[dict] = []
     last_result = None

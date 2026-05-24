@@ -16,6 +16,13 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+try:
+    # Vendored: squelch_eval/{utils,eval_lib}.py
+    from .utils import load_lookup
+except ImportError:
+    # Repo-side sibling import.
+    from utils import load_lookup
+
 
 @dataclass
 class EvalResult:
@@ -100,18 +107,9 @@ _IDENTITY_NORM_MAP = {
 
 
 def _load_normalization_map(normalization_csv: Path | None) -> dict[str, str]:
-    """CSV path → {raw_label: normalized_label}. None / missing → identity map.
-
-    Deferred import of load_lookup from .cluster to avoid a module-level
-    circular import (cluster imports _read_json_results from us). The
-    try/except mirrors the same dual-mode pattern cluster.py uses.
-    """
+    """CSV path → {raw_label: normalized_label}. None / missing → identity map."""
     if normalization_csv is None:
         return dict(_IDENTITY_NORM_MAP)
-    try:
-        from .cluster import load_lookup
-    except ImportError:
-        from cluster import load_lookup
     m = load_lookup(normalization_csv)
     return m or dict(_IDENTITY_NORM_MAP)
 

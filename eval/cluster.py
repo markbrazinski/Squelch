@@ -16,16 +16,22 @@ after edits.
 
 from __future__ import annotations
 
-import csv
 from collections import Counter, defaultdict
 from pathlib import Path
 
 try:
-    # Vendored as a package inside the Splunk app: squelch_eval/{eval_lib,cluster}.py
+    # Vendored as a package inside the Splunk app: squelch_eval/{eval_lib,cluster,utils}.py
     from .eval_lib import _read_json_results
+    from .utils import load_lookup  # re-exported below for back-compat
 except ImportError:
     # Repo-side: eval/ is on sys.path, eval_lib is a sibling module.
     from eval_lib import _read_json_results
+    from utils import load_lookup
+
+# `load_lookup` remains importable from this module to avoid breaking
+# callers like `from squelch_eval.cluster import load_lookup` (Bundle 2).
+# Single source of truth lives in eval/utils.py.
+__all__ = ["cluster_fps", "pull_labeled_events", "load_lookup", "FIELDS_DEFAULT"]
 
 
 FIELDS_DEFAULT = ("src_ip", "dest", "user")
@@ -38,11 +44,16 @@ def pull_labeled_events(service, search_name: str,
     SPL is host-filtered to `squelch-seed` to match the golden dataset
     (D3 / eval/golden_dataset.conf). Rows without a status_label are
     dropped — clustering only operates on labeled events.
+
+    Bundle 3 Sessions 23-24: projection widened with `dest_ip` and
+    `sourcetype_tag` so the same event list feeds both `cluster_fps`
+    (which still operates on the 3-field default) and `diagnose_fp_pattern`
+    (which needs `dest_ip` empties + `sourcetype_tag` correlation).
     """
     spl = (
         f'search index=notable sourcetype=squelch_notable host=squelch-seed '
         f'search_name="{search_name}" '
-        f'| fields _cd, src_ip, dest, user, status_label'
+        f'| fields _cd, src_ip, dest, dest_ip, user, status_label, sourcetype_tag'
     )
     stream = service.jobs.oneshot(
         spl, earliest_time=earliest, latest_time=latest,
@@ -50,25 +61,6 @@ def pull_labeled_events(service, search_name: str,
     )
     rows = _read_json_results(stream)
     return [r for r in rows if r.get("status_label")]
-
-
-def load_lookup(csv_path: Path | None) -> dict[str, str]:
-    """Two-column CSV → {value: context}. Returns {} if path missing.
-
-    Column 0 is the lookup key; column 1 is the human-readable context.
-    Header row is skipped (DictReader-style — first row defines names
-    but we just read positionally for simplicity).
-    """
-    if csv_path is None or not Path(csv_path).exists():
-        return {}
-    out: dict[str, str] = {}
-    with open(csv_path, newline="") as f:
-        reader = csv.reader(f)
-        next(reader, None)  # skip header
-        for row in reader:
-            if len(row) >= 2 and row[0]:
-                out[row[0]] = row[1]
-    return out
 
 
 _IDENTITY_NORM_MAP = {
@@ -79,19 +71,20 @@ _IDENTITY_NORM_MAP = {
 
 def cluster_fps(events: list[dict],
                 fields: tuple[str, ...] = FIELDS_DEFAULT,
-                lookup_csv_path: Path | None = None,
-                lookup_name: str = "scanner_ips",
+                field_lookups: dict[str, Path] | None = None,
                 normalization_csv: Path | None = None) -> dict:
     """Per-field FP clusters with recall-risk and lookup annotations.
 
     Args:
         events: output of pull_labeled_events (must carry status_label).
         fields: which event fields to cluster on.
-        lookup_csv_path: optional CSV path; if set, values present in
-            the lookup get lookup_match=lookup_name + lookup_context.
-        lookup_name: tag written to lookup_match. Lets Bundle 2 wire
-            additional lookups (e.g. service_accounts) without changing
-            the function signature.
+        field_lookups: optional `{field: csv_path}` map. For each field
+            present in the map, values found in the corresponding CSV
+            get lookup_match=<file_stem> (e.g. "scanner_ips") and
+            lookup_context=<column-1 value>. Bundle 3 Sessions 21-22
+            replaced the single-lookup `lookup_csv_path`/`lookup_name`
+            kwargs so Detection 2's `user` field can cross-reference
+            service_accounts.csv while `src_ip` keeps scanner_ips.csv.
         normalization_csv: optional CSV path mapping noisy `status_label`
             values to canonical "true_positive"/"false_positive". Bundle 2
             Sessions 13-14. When None, only literal canonical labels count
@@ -108,7 +101,11 @@ def cluster_fps(events: list[dict],
           },
         }
     """
-    lookup = load_lookup(lookup_csv_path)
+    loaded_lookups: dict[str, tuple[str, dict[str, str]]] = {}
+    if field_lookups:
+        for fld, path in field_lookups.items():
+            loaded_lookups[fld] = (Path(path).stem, load_lookup(path))
+
     norm_map = load_lookup(normalization_csv) if normalization_csv else dict(_IDENTITY_NORM_MAP)
     if not norm_map:
         norm_map = dict(_IDENTITY_NORM_MAP)
@@ -133,6 +130,8 @@ def cluster_fps(events: list[dict],
             elif normalized == "true_positive":
                 tp_counter[val] += 1
 
+        lookup_name_for_field, lookup_for_field = loaded_lookups.get(fld, (None, {}))
+
         cluster_rows = []
         # Only emit values that appear in at least one FP (the things
         # the LLM might propose filtering). A value with tp_count>0
@@ -141,14 +140,14 @@ def cluster_fps(events: list[dict],
             tp_count = tp_counter.get(value, 0)
             fp_pct = fp_count / total_fps if total_fps else 0.0
             tp_pct = tp_count / total_tps if total_tps else 0.0
-            ctx = lookup.get(value)
+            ctx = lookup_for_field.get(value)
             cluster_rows.append({
                 "value": value,
                 "fp_count": fp_count,
                 "fp_pct": round(fp_pct, 4),
                 "tp_count": tp_count,
                 "tp_pct": round(tp_pct, 4),
-                "lookup_match": lookup_name if ctx is not None else None,
+                "lookup_match": lookup_name_for_field if ctx is not None else None,
                 "lookup_context": ctx,
             })
         cluster_rows.sort(key=lambda r: r["fp_pct"], reverse=True)
@@ -159,3 +158,81 @@ def cluster_fps(events: list[dict],
         "total_tps": total_tps,
         "by_field": by_field,
     }
+
+
+# Bundle 3 Sessions 23-24 thresholds for the decline-to-tune diagnosis path.
+# Locked from spec; tunable if data-quality patterns shift.
+DIAGNOSE_EMPTY_THRESHOLD = 0.30       # field empty in >30% of FPs
+DIAGNOSE_SOURCETYPE_THRESHOLD = 0.80  # >80% of empties share one sourcetype_tag
+
+
+def diagnose_fp_pattern(events: list[dict],
+                        normalization_csv: Path | None = None,
+                        fields: tuple[str, ...] = ("src_ip", "dest", "dest_ip", "user"),
+                        sourcetype_field: str = "sourcetype_tag") -> dict | None:
+    """Field-coverage analysis for the decline-to-tune path.
+
+    For each field, compute the empty/missing share among FPs. If any
+    field is empty in >DIAGNOSE_EMPTY_THRESHOLD of FPs AND those empties
+    correlate with one `sourcetype_field` value at
+    >DIAGNOSE_SOURCETYPE_THRESHOLD, return a field_extraction_gap diagnosis.
+
+    Returns:
+        {
+          "type": "field_extraction_gap",
+          "field": str,
+          "empty_pct": float,
+          "sourcetype": str,
+          "sourcetype_pct": float,
+          "fp_count": int,
+          "empty_count": int,
+          "recommendation": str,
+        }
+        or None if no diagnosable pattern.
+    """
+    norm_map = load_lookup(normalization_csv) if normalization_csv else dict(_IDENTITY_NORM_MAP)
+    if not norm_map:
+        norm_map = dict(_IDENTITY_NORM_MAP)
+
+    fp_events = [e for e in events
+                 if norm_map.get(e.get("status_label")) == "false_positive"]
+    fp_count = len(fp_events)
+    if fp_count == 0:
+        return None
+
+    for fld in fields:
+        empty_events = [e for e in fp_events if not e.get(fld)]
+        empty_count = len(empty_events)
+        empty_pct = empty_count / fp_count
+        if empty_pct < DIAGNOSE_EMPTY_THRESHOLD:
+            continue
+
+        st_counter: Counter = Counter()
+        for e in empty_events:
+            st = e.get(sourcetype_field)
+            if st:
+                st_counter[st] += 1
+        if not st_counter:
+            continue
+        top_st, top_st_count = st_counter.most_common(1)[0]
+        st_pct = top_st_count / empty_count
+        if st_pct < DIAGNOSE_SOURCETYPE_THRESHOLD:
+            continue
+
+        return {
+            "type": "field_extraction_gap",
+            "field": fld,
+            "empty_pct": round(empty_pct, 4),
+            "sourcetype": top_st,
+            "sourcetype_pct": round(st_pct, 4),
+            "fp_count": fp_count,
+            "empty_count": empty_count,
+            "recommendation": (
+                f"Fix field extraction for '{fld}' in props.conf for "
+                f"sourcetype_tag='{top_st}'. {empty_count}/{fp_count} FPs "
+                f"({empty_pct:.0%}) have empty {fld}; {st_pct:.0%} of those "
+                f"are tagged {top_st}."
+            ),
+        }
+
+    return None
