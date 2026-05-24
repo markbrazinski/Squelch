@@ -31,7 +31,15 @@ except ImportError:
 # `load_lookup` remains importable from this module to avoid breaking
 # callers like `from squelch_eval.cluster import load_lookup` (Bundle 2).
 # Single source of truth lives in eval/utils.py.
-__all__ = ["cluster_fps", "pull_labeled_events", "load_lookup", "FIELDS_DEFAULT"]
+__all__ = [
+    "cluster_fps",
+    "pull_labeled_events",
+    "load_lookup",
+    "FIELDS_DEFAULT",
+    "diagnose_fp_pattern",
+    "summarize_hypotheses",
+    "format_hypothesis_summary",
+]
 
 
 FIELDS_DEFAULT = ("src_ip", "dest", "user")
@@ -236,3 +244,119 @@ def diagnose_fp_pattern(events: list[dict],
         }
 
     return None
+
+
+def _floor_pct() -> float:
+    # Lazy import: revise.py imports llm.py at module load, which we don't
+    # want to drag in just to read a constant. Match _pick_top_cluster's floor.
+    try:
+        from .revise import MIN_TOP_ENTRY_FP_PCT
+    except ImportError:
+        from revise import MIN_TOP_ENTRY_FP_PCT
+    return MIN_TOP_ENTRY_FP_PCT
+
+
+def summarize_hypotheses(clusters: dict, picked: dict | None) -> list[dict]:
+    """Rank every field in `clusters["by_field"]` as a filter hypothesis.
+
+    For each field, "explanatory power" is the cumulative fp_pct of the
+    leading safe (tp_pct == 0) entries — the share of FPs a NOT-filter
+    on those values would eliminate without dropping any TPs. If the top
+    entry has tp_pct > 0, no filter is safe and explanatory power is 0.
+
+    `picked` is the dict returned by revise._pick_top_cluster (or None
+    when the declined path fires). The matching field gets picked=True.
+
+    Returned list is sorted descending by cumulative_fp_pct so the demo
+    output renders winner-first.
+    """
+    floor = _floor_pct()
+    picked_field = picked["field"] if picked else None
+
+    by_field = clusters.get("by_field", {})
+    out: list[dict] = []
+    for fld, rows in by_field.items():
+        if not rows:
+            out.append({
+                "field": fld,
+                "cumulative_fp_pct": 0.0,
+                "top_value": None,
+                "top_value_fp_pct": 0.0,
+                "lookup_context": None,
+                "picked": False,
+                "reason_rejected": "no safe values",
+            })
+            continue
+
+        top = rows[0]
+        top_value = top["value"]
+        top_value_fp_pct = top["fp_pct"]
+        lookup_context = top.get("lookup_context")
+
+        if top["tp_pct"] != 0.0:
+            cumulative = 0.0
+            reason = "tp_pct > 0 on top entry"
+        else:
+            cumulative = 0.0
+            for row in rows:
+                if row["tp_pct"] != 0.0:
+                    break
+                cumulative += row["fp_pct"]
+                if cumulative >= 0.80:
+                    break
+
+            if fld == picked_field:
+                reason = None
+            elif cumulative < floor:
+                reason = f"cumulative < {floor:.0%} floor"
+            elif picked_field is None:
+                reason = f"cumulative < {floor:.0%} floor"
+            else:
+                reason = f"runner-up to {picked_field}"
+
+        out.append({
+            "field": fld,
+            "cumulative_fp_pct": round(cumulative, 4),
+            "top_value": top_value,
+            "top_value_fp_pct": top_value_fp_pct,
+            "lookup_context": lookup_context,
+            "picked": fld == picked_field,
+            "reason_rejected": reason,
+        })
+
+    out.sort(key=lambda h: h["cumulative_fp_pct"], reverse=True)
+    return out
+
+
+def format_hypothesis_summary(hypotheses: list[dict],
+                              diagnosis: dict | None = None) -> str:
+    """Render hypotheses as the demo-script's `[HYPOTHESIS] ...` lines.
+
+    Format mirrors docs/demo-script.md Beats 3-5:
+      [HYPOTHESIS] src_ip cluster: 78% explanatory power ✓
+      [HYPOTHESIS] user cluster: 11% ✗
+      [HYPOTHESIS] sourcetype coverage: 45% — FIELD EXTRACTION GAP DETECTED ✓
+
+    The trailing sourcetype line is appended only when `diagnosis` is a
+    field_extraction_gap dict (declined path on Endpoint).
+    """
+    lines: list[str] = []
+    any_picked = any(h["picked"] for h in hypotheses)
+    for h in hypotheses:
+        pct = f"{h['cumulative_fp_pct']:.0%}"
+        if h["picked"]:
+            lines.append(
+                f"[HYPOTHESIS] {h['field']} cluster: {pct} explanatory power ✓"
+            )
+        else:
+            lines.append(f"[HYPOTHESIS] {h['field']} cluster: {pct} ✗")
+
+    if diagnosis and diagnosis.get("type") == "field_extraction_gap":
+        st_pct = f"{diagnosis['sourcetype_pct']:.0%}"
+        mark = "✓" if not any_picked else "✗"
+        lines.append(
+            f"[HYPOTHESIS] sourcetype coverage: {st_pct} — "
+            f"FIELD EXTRACTION GAP DETECTED {mark}"
+        )
+
+    return "\n".join(lines)

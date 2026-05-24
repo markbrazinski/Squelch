@@ -12,9 +12,18 @@ as an arg means that's a one-line change in the caller, not a refactor.
 from __future__ import annotations
 
 import configparser
+import copy
+import hashlib
+import random
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+
+
+# Bundle 4 Sessions 33-34: max abs recall delta under 10% label-flip
+# perturbation that still counts as PASS. 0.05 is informational only —
+# the recall gate (gate_revision) remains the safety mechanism.
+PERTURB_RECALL_PASS_THRESHOLD = 0.05
 
 try:
     # Vendored: squelch_eval/{utils,eval_lib}.py
@@ -145,6 +154,7 @@ def evaluate_detection(
     latest: str = "now",
     normalization_csv: Path | None = None,
     injected_events: list[dict] | None = None,
+    golden_events: list[dict] | None = None,
 ) -> EvalResult:
     """Run detection_spl + golden_query, compute confusion matrix and metrics.
 
@@ -159,18 +169,28 @@ def evaluate_detection(
 
     detection_spl is whatever the saved search runs (the "detection
     fires on these events" definition).
+
+    Bundle 4 Sessions 33-34: when `golden_events` is provided, the golden
+    Splunk query is skipped and the supplied events are used directly.
+    Callers are responsible for providing events with the *raw*
+    `status_label` field — the function re-normalizes via
+    normalization_csv. Used by perturb_and_eval to flip labels in-memory
+    across trials without re-querying Splunk.
     """
     norm_map = _load_normalization_map(normalization_csv)
 
     # 1. Golden ground truth
     # Both queries get wrapped with `| fields ...` so search-time extracted
     # fields (status_label, etc.) are surfaced to JSONResultsReader.
-    golden_wrapped = f"{golden_query} | fields _cd, status_label"
-    golden_stream = service.jobs.oneshot(
-        golden_wrapped, earliest_time=earliest, latest_time=latest,
-        output_mode="json", count=0,
-    )
-    golden_rows = _read_json_results(golden_stream)
+    if golden_events is None:
+        golden_wrapped = f"{golden_query} | fields _cd, status_label"
+        golden_stream = service.jobs.oneshot(
+            golden_wrapped, earliest_time=earliest, latest_time=latest,
+            output_mode="json", count=0,
+        )
+        golden_rows = _read_json_results(golden_stream)
+    else:
+        golden_rows = golden_events
     golden_tp_ids: set[str] = set()
     golden_fp_ids: set[str] = set()
     for e in golden_rows:
@@ -231,6 +251,107 @@ def evaluate_detection(
         fired_ids=frozenset(fired_ids),
         golden_tp_ids=frozenset(golden_tp_ids),
     )
+
+
+_LABEL_FLIP = {
+    "true_positive": "false_positive",
+    "false_positive": "true_positive",
+}
+
+
+def _perturb_seeded_rng(detection_name: str, trial_idx: int) -> random.Random:
+    """SHA-256-seeded RNG, namespaced to perturbation. Matches the
+    template at attack_inject._seeded_rng so the two RNGs never collide
+    (different namespace token: `:perturb:` vs the SPL itself).
+    """
+    seed_bytes = hashlib.sha256(
+        f"{detection_name}:perturb:{trial_idx}".encode("utf-8")
+    ).digest()[:8]
+    return random.Random(int.from_bytes(seed_bytes, "big"))
+
+
+def perturb_and_eval(
+    service,
+    detection_name: str,
+    detection_spl: str,
+    golden_query: str,
+    *,
+    normalization_csv: Path | None = None,
+    earliest: str = "-90d",
+    latest: str = "now",
+    flip_pct: float = 0.10,
+    n_trials: int = 3,
+    baseline: EvalResult | None = None,
+) -> dict:
+    """Flip a random fraction of golden labels, re-eval, repeat.
+
+    Reports how much precision/recall move under label noise. PASS when
+    abs(max_recall_delta) < PERTURB_RECALL_PASS_THRESHOLD — informational
+    only; the recall gate in gate_revision remains the safety mechanism.
+
+    Re-uses the in-memory event pattern from attack_inject: pulls the
+    golden set once and flips labels per trial without re-querying Splunk.
+    """
+    if baseline is None:
+        baseline = evaluate_detection(
+            service, detection_name, detection_spl, golden_query,
+            earliest=earliest, latest=latest,
+            normalization_csv=normalization_csv,
+        )
+
+    golden_wrapped = f"{golden_query} | fields _cd, status_label"
+    golden_stream = service.jobs.oneshot(
+        golden_wrapped, earliest_time=earliest, latest_time=latest,
+        output_mode="json", count=0,
+    )
+    golden_rows = _read_json_results(golden_stream)
+
+    precision_deltas: list[float] = []
+    recall_deltas: list[float] = []
+
+    for i in range(n_trials):
+        rng = _perturb_seeded_rng(detection_name, i)
+        perturbed = copy.deepcopy(golden_rows)
+        k = max(1, int(flip_pct * len(perturbed))) if perturbed else 0
+        if k:
+            for idx in rng.sample(range(len(perturbed)), k):
+                ev = perturbed[idx]
+                ev["status_label"] = _LABEL_FLIP.get(
+                    ev.get("status_label"), ev.get("status_label"),
+                )
+
+        trial = evaluate_detection(
+            service, detection_name, detection_spl, golden_query,
+            earliest=earliest, latest=latest,
+            normalization_csv=normalization_csv,
+            golden_events=perturbed,
+        )
+        precision_deltas.append(trial.precision - baseline.precision)
+        recall_deltas.append(trial.recall - baseline.recall)
+
+    mean_precision_delta = (
+        sum(precision_deltas) / len(precision_deltas) if precision_deltas else 0.0
+    )
+    mean_recall_delta = (
+        sum(recall_deltas) / len(recall_deltas) if recall_deltas else 0.0
+    )
+    # Signed value with largest absolute magnitude — keeps directional info.
+    max_precision_delta = (
+        max(precision_deltas, key=abs) if precision_deltas else 0.0
+    )
+    max_recall_delta = (
+        max(recall_deltas, key=abs) if recall_deltas else 0.0
+    )
+
+    return {
+        "mean_precision_delta": round(mean_precision_delta, 4),
+        "mean_recall_delta": round(mean_recall_delta, 4),
+        "max_precision_delta": round(max_precision_delta, 4),
+        "max_recall_delta": round(max_recall_delta, 4),
+        "n_trials": n_trials,
+        "flip_pct": flip_pct,
+        "pass": abs(max_recall_delta) < PERTURB_RECALL_PASS_THRESHOLD,
+    }
 
 
 def gate_revision(baseline: EvalResult, proposed: EvalResult) -> dict:
