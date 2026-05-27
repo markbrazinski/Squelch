@@ -1,0 +1,1 @@
+search index=notable sourcetype=squelch_notable search_name="Identity_PrivEscalation_Confirmed" NOT user IN ("svc_backup")
