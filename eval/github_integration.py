@@ -165,10 +165,19 @@ def create_pr_for_detection(
         if exc.code != 422:
             raise
         # Branch has no commits ahead of base — fall back to proposals branch.
-        # Close any open PR on proposals first so multi-detection runs don't 422.
-        close_open_prs(repo, PROPOSALS_BRANCH, token=token)
-        pr = create_pr(repo, title, body, token=token,
-                       head=PROPOSALS_BRANCH, base=base, label=label)
+        # Do NOT close existing open PRs: each detection's PR should remain open
+        # until a human closes it. If proposals branch already has an open PR,
+        # surface a github_error rather than silently closing the previous one.
+        try:
+            pr = create_pr(repo, title, body, token=token,
+                           head=PROPOSALS_BRANCH, base=base, label=label)
+        except urllib.error.HTTPError as exc2:
+            if exc2.code != 422:
+                raise
+            raise RuntimeError(
+                f"squelch/proposals already has an open PR. "
+                f"Close or merge it before running another tune on a no-commit branch."
+            ) from exc2
         branch = PROPOSALS_BRANCH
     return {**pr, "branch": branch}
 
@@ -210,13 +219,67 @@ def _label_sensitivity_section(perturbation: dict,
     return lines
 
 
+def _temporal_stability_section(holdout: dict, *, baseline_only: bool = False) -> list[str]:
+    """Render the Bundle 5 Temporal Stability section. Returns line list."""
+    badge = "**PASS**" if holdout["pass"] else "**WARN — revision may overfit to training window**"
+    split_pct = int(holdout["split_pct"] * 100)
+    holdout_pct = 100 - split_pct
+    lines = [
+        f"## Temporal Stability ({split_pct}/{holdout_pct} split)",
+        "",
+        f"{badge}",
+        "",
+    ]
+    if baseline_only:
+        lines += [
+            "Baseline detection metrics are temporally stable.",
+            "",
+            "| Window | Events | Precision | Recall |",
+            "|---|---|---|---|",
+        ]
+        # baseline-only: no revised_train/holdout_recall_delta in dict — use
+        # precision only (this path is called from build_issue_body)
+        lines.append(
+            f"| Training ({split_pct}%) | {holdout['training_events']} "
+            f"| {holdout['baseline_train_precision']:.2f} | — |"
+        )
+        lines.append(
+            f"| Holdout ({holdout_pct}%) | {holdout['holdout_events']} "
+            f"| {holdout['baseline_holdout_precision']:.2f} | — |"
+        )
+    else:
+        lines += [
+            "| Window | Events | Baseline Precision | Revised Precision | Lift |",
+            "|---|---|---|---|---|",
+        ]
+        train_lift = holdout["training_precision_lift"]
+        hold_lift = holdout["holdout_precision_lift"]
+        train_lift_str = f"{train_lift:+.2f}" if train_lift is not None else "—"
+        hold_lift_str = f"{hold_lift:+.2f}" if hold_lift is not None else "—"
+        rev_train = holdout["revised_train_precision"]
+        rev_hold = holdout["revised_holdout_precision"]
+        rev_train_str = f"{rev_train:.2f}" if rev_train is not None else "—"
+        rev_hold_str = f"{rev_hold:.2f}" if rev_hold is not None else "—"
+        lines.append(
+            f"| Training ({split_pct}%) | {holdout['training_events']} "
+            f"| {holdout['baseline_train_precision']:.2f} | {rev_train_str} | {train_lift_str} |"
+        )
+        lines.append(
+            f"| Holdout ({holdout_pct}%) | {holdout['holdout_events']} "
+            f"| {holdout['baseline_holdout_precision']:.2f} | {rev_hold_str} | {hold_lift_str} |"
+        )
+    lines.append("")
+    return lines
+
+
 def build_pr_body(detection_name: str, eval_before, eval_after,
                   picked_cluster: dict | None,
                   injection_results: list[dict],
                   initial_values: list[str], final_values: list[str],
                   revised_spl: str, original_spl: str,
                   *, hypotheses: list[dict] | None = None,
-                  perturbation: dict | None = None) -> str:
+                  perturbation: dict | None = None,
+                  holdout: dict | None = None) -> str:
     """Markdown body for an accepted-tune PR.
 
     eval_before / eval_after are EvalResult dataclasses (eval/eval_lib.py).
@@ -331,6 +394,10 @@ def build_pr_body(detection_name: str, eval_before, eval_after,
     if perturbation is not None:
         lines.extend(_label_sensitivity_section(perturbation))
 
+    # Bundle 5 Sessions 40-41: temporal holdout overfitting check.
+    if holdout is not None:
+        lines.extend(_temporal_stability_section(holdout))
+
     lines.append("## Cluster analysis")
     lines.append("")
     if picked_cluster:
@@ -354,7 +421,8 @@ def build_pr_body(detection_name: str, eval_before, eval_after,
 def build_issue_body(detection_name: str, diagnosis: dict,
                      eval_before, original_spl: str,
                      *, hypotheses: list[dict] | None = None,
-                     perturbation: dict | None = None) -> str:
+                     perturbation: dict | None = None,
+                     holdout: dict | None = None) -> str:
     """Markdown body for a decline-to-tune Issue.
 
     diagnosis is the dict returned by diagnose_fp_pattern (eval/cluster.py).
@@ -423,6 +491,10 @@ def build_issue_body(detection_name: str, diagnosis: dict,
     # Bundle 4 Sessions 33-34: baseline label-sensitivity badge.
     if perturbation is not None:
         lines.extend(_label_sensitivity_section(perturbation, baseline_only=True))
+
+    # Bundle 5 Sessions 40-41: temporal holdout baseline stability.
+    if holdout is not None:
+        lines.extend(_temporal_stability_section(holdout, baseline_only=True))
 
     lines.extend([
         "## Original SPL",

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Capture the latest detection_lineage KV row per detection into a CSV.
 
-Bundle 3 Sessions 27-28. Re-runnable; overwrites the target file. Reads
-the most recent (max decision_timestamp) row for every detection that
-has ever been tuned and flattens the eval_before/eval_after JSON into
-per-metric columns.
+Bundle 3 Sessions 27-28; extended Bundle 5 Session 42 to add holdout columns.
+Re-runnable; overwrites the target file. Reads the most recent
+(max decision_timestamp) row for every detection that has ever been tuned
+and flattens the eval_before/eval_after/holdout JSON into per-metric columns.
 
 Usage:
-    ./scripts/capture_tune_results.py [--out eval/results/tune_results_bundle_3.csv]
+    ./scripts/capture_tune_results.py [--out eval/results/tune_results_bundle_5.csv]
 """
 
 import argparse
@@ -44,6 +44,9 @@ COLUMNS = [
     "github_error",
     "diagnosis",
     "decision_timestamp",
+    "holdout_pass",
+    "holdout_training_precision_lift",
+    "holdout_holdout_precision_lift",
 ]
 
 
@@ -60,7 +63,7 @@ def _load_env(env_path: Path) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--out", default="eval/results/tune_results_bundle_3.csv")
+    ap.add_argument("--out", default="eval/results/tune_results_bundle_5.csv")
     args = ap.parse_args()
 
     repo_root = Path(__file__).resolve().parent.parent
@@ -105,6 +108,14 @@ def main() -> int:
                 ea_metrics = ea.get("metrics", {}) if isinstance(ea, dict) else {}
             except json.JSONDecodeError:
                 ea_metrics = {}
+        holdout_raw = row.get("holdout", "") or ""
+        holdout_data = {}
+        if holdout_raw:
+            try:
+                holdout_data = json.loads(holdout_raw)
+            except json.JSONDecodeError:
+                holdout_data = {}
+
         out_rows.append({
             "detection_name": name,
             "decision": row.get("decision", ""),
@@ -123,6 +134,9 @@ def main() -> int:
             "github_error": row.get("github_error", ""),
             "diagnosis": row.get("diagnosis", ""),
             "decision_timestamp": row.get("decision_timestamp", ""),
+            "holdout_pass": holdout_data.get("pass", ""),
+            "holdout_training_precision_lift": holdout_data.get("training_precision_lift", ""),
+            "holdout_holdout_precision_lift": holdout_data.get("holdout_precision_lift", ""),
         })
 
     out_path = repo_root / args.out

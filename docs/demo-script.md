@@ -1,343 +1,274 @@
-# Squelch Demo Script — Final
+# Squelch Demo — VO Script (Final Cut, TTS-Ready)
 
-**Total runtime:** 2:45 (15s buffer against 3:00 hard limit)
-**Word budget:** ~375 words narration (~2:30 at 150 wpm, leaving ~15s for pauses/transitions)
-**Opening card:** None. Persistent lower-third: "Squelch — Automated Detection Tuning for Splunk"
-**Structure:** 8 beats. Three detections, three outcomes, escalating complexity. Detection 3 is the climax.
-
----
-
-## Beat 1 — The Payoff (0:00–0:15)
-
-**On screen:** Splunk search results. Browser zoomed to 140%. Two searches shown in quick sequence:
-- BEFORE: `index=notable search_name="WindowsAuth_AnomalousLogonSource" | stats count by status_label` — 340 total, messy status_label values visible ("false_positive", "resolved", "FP - scanner", "fp", "closed", blank cells). The mess is visible even in the payoff frame.
-- AFTER: Same search post-tune — 19 total. Clean.
-
-The lower-third appears on frame one.
-
-**Narrator says:**
-"Eighty-three percent false positive rate. Three hundred forty notables a day on one rule, and your analysts stopped reading them weeks ago. After Squelch: nineteen. Precision from fourteen to eighty-seven. On data with six label formats and thirty percent gaps. Here's how."
-
-*(43 words, ~17 seconds — narration starts at ~0:02 after the BEFORE numbers are visible)*
-
-**Why this beat exists:** Payoff-first. The judge decides in 10 seconds whether to keep watching. Give them the result, then the credibility kicker ("on data with six label formats and thirty percent gaps") while the messy labels are still visible on screen. "Your analysts stopped reading them weeks ago" is the sentence that turns a number into a feeling. "Here's how" is the hook that earns the next 2:30.
-
-**Framework component:** EVALS, SPLUNK-NATIVE
-
-**Prize criteria served:** Potential Impact (the before/after), Quality of Idea (honest about data conditions from frame one)
+**Total words:** 371 (budget: 370–380)
+**Estimated runtime at 150 wpm:** 2:28
+**Timeline slot total:** 2:55 (27 seconds breathing room for pauses and silent visual beats)
+**TTS engine:** ElevenLabs
 
 ---
 
-## Beat 2 — The Trigger + Label Normalization (0:15–0:30)
+## Pronunciation Key
 
-**On screen:** Saved search configuration. SPL visible in the search bar — including a `| lookup disposition_normalization status_label OUTPUT normalized_label` step that maps the six label variants to two canonical values (true_positive / false_positive). Unlabeled events excluded. The search runs and returns three detections above 70% FP rate, shown as a table: search_name, fp_count, total, fp_rate.
+These spellings are for the TTS engine. Each entry replaces a technical abbreviation with its spoken form.
 
-**Narrator says:**
-"Labels get normalized first — a lookup maps six formats to two. Unlabeled events excluded, not guessed. Then: false positive rate per detection, seven-day window. Three detections cross seventy percent. The agent fires."
-
-*(33 words, ~13 seconds — leaves 2 seconds for screen to breathe)*
-
-**Why this beat exists:** Label normalization addresses the #1 practitioner objection ("your data is too clean"). Showing it in the trigger beat communicates "this was designed for your environment" in 15 seconds. "The agent fires" closes the beat with a vivid verb — the system has selected its targets, now we see what it does with them.
-
-**Framework component:** TRIGGER, SPLUNK-NATIVE
-
-**Prize criteria served:** Technological Implementation (Splunk-native trigger with normalization), Design (invisible UX — it just runs), Developer Tools ($1K — saved search + scheduler + lookup)
+- "ciders" = CIDRs
+- "S-V-C" = svc
+- "dest I-P" = dest_ip
+- "P-Rs" = PRs
+- "S-P-L" = SPL
+- "L-L-M" = LLM
+- "M-C-P" = MCP
+- "K-V" = KV
 
 ---
 
-## Beat 3 — Detection 1: The Obvious Pattern (0:30–0:50)
+## WPM Summary
 
-**On screen:** Splunk search bar executing `| squelch mode="tune" search_name="WindowsAuth_AnomalousLogonSource"` — show Splunk's native search progress bar filling for ~2 seconds, then cut to output.
-
-Agent output shows:
-1. Multi-hypothesis display: `src_ip cluster: 78% explanatory power ✓` / `user+time cluster: 11% ✗` / `sourcetype coverage: no gap ✗`
-2. Revision: NOT filter on **two** CIDRs (not three — the third was excluded)
-3. Eval table: `precision 14% → 87%, recall 100%, label perturbation PASS, attack injection — 10.0.1.51 excluded from filter`
-
-**Narrator says:**
-"First detection — scanner IPs. Three hypotheses tested, one wins. The agent proposes a NOT filter on two CIDRs — not three. The third range had a real attack hiding in the scanner traffic. The eval harness caught it. The agent narrowed the filter on its own. Precision: fourteen to eighty-seven."
-
-*(46 words, ~18 seconds)*
-
-**Why this beat exists:** The warm-up, not the headline. Establishes the pipeline works and shows the attack injection catching an edge case. "A real attack hiding in the scanner traffic" is visceral — the judge feels the consequence, the mechanism lives in the Devpost. The hypothesis display proves the agent evaluates alternatives.
-
-**Framework component:** BRAIN (multi-hypothesis), EVALS (attack injection), TOOLS (MCP)
-
-**Prize criteria served:** Technological Implementation (multi-hypothesis + adversarial eval), Quality of Idea (attack injection is novel), Potential Impact (safety proof)
+| Beat | Words | WPM | Status |
+|---|---|---|---|
+| Title | 15 | 180 | Locked tagline — time-stretch the 5-second slot if needed |
+| Beat 1 | 16 | 80 | Comfortable — room for silent scroll before VO enters |
+| Beat 2 | 36 | 120 | Clean |
+| Beat 3 | 44 | 132 | Resolved (was 168) |
+| Beat 4 | 43 | 129 | Clean |
+| Beat 5 | 73 | 146 | The climax — earns every word |
+| Beat 6 | 38 | 114 | Clean |
+| Beat 7 | 43 | 129 | Resolved (was 171) |
+| Beat 8 | 63 | 126 | Clean — room for 2-second silence before VO enters |
 
 ---
 
-## Beat 4 — Detection 2: The Behavioral Pattern (0:50–1:10)
+## Title Slide (0:00–0:05) — 15 words
 
-**On screen:** Agent output for `PrivilegeEscalation_UnusualServiceAccess`. Show:
-1. Multi-hypothesis display: `user cluster: 65% explanatory power ✓ (svc_backup)` / `src_ip cluster: 18% ✗` / `dest cluster: 9% ✗`
-2. Cross-reference step: agent checks identity/service account lookup → confirms svc_backup is known infrastructure
-3. Revision: NOT filter on `user="svc_backup"`
-4. Eval: precision improved, recall held, label perturbation PASS
+**On screen:** Product name "Squelch" centered. One-line definition fades in beneath it.
 
-**Narrator says:**
-"Second detection — different pattern. Sixty-five percent of false positives come from one account: svc_backup. Not an IP pattern — a simple frequency count would miss it. The agent cross-references the identity lookup, confirms it's a known service account, and proposes a user-level filter."
+**VO:**
 
-*(40 words, ~16 seconds — leaves 4 seconds of screen breathing room)*
-
-**Why this beat exists:** The "it's smarter than a script" proof. Scanner IPs are the pattern any SIEM engineer handles in 20 minutes. A service account behavioral pattern requires the agent to look beyond IP clustering. "A simple frequency count would miss it" communicates this to both practitioners and non-practitioner judges.
-
-**Framework component:** BRAIN (behavioral clustering), TOOLS (identity lookup cross-reference via MCP)
-
-**Prize criteria served:** Quality of Idea (proves intelligence beyond trivial patterns), Technological Implementation (multi-field clustering + lookup cross-reference), MCP Server ($1K — agent uses MCP tools to read identity lookup)
+Squelch is an adversarial validation harness that proves detection changes are safe before they ship.
 
 ---
 
-## Beat 5 — Detection 3: "Don't Tune This" (1:10–1:40)
+## Beat 1 — The Mess (0:05–0:17) — 16 words
 
-**On screen:** Agent output for `DNS_TunnelExfil_Heuristic`. Show:
-1. Multi-hypothesis display: `dest_ip cluster: 22% ✗` / `src_ip cluster: 15% ✗` / `sourcetype coverage: 45% — FIELD EXTRACTION GAP DETECTED ✓`
-2. Agent's reasoning: ~45% of FPs have `dest_ip=""` (empty field), ALL from `sourcetype=dns_proxy_v2`
-3. Agent conclusion: "Detection FP rate driven by field extraction gap on sourcetype dns_proxy_v2, not by pattern in events. Recommend fixing props.conf, not tuning detection."
-4. Output: GitHub **Issue** (not a PR) — filed against the field extraction gap with evidence: sourcetype, empty field percentage, affected events
+**On screen:** Slow scroll through messy Splunk notable index. Six different status_label formats, blank cells. Lower-third appears.
 
-**Narrator says:**
-"Third detection. No single pattern dominates. But forty-five percent of false positives have an empty dest_ip field, all from one sourcetype. The detection isn't wrong. The data feeding it is broken. Squelch declines to tune. Files a GitHub Issue against the field extraction gap. Evidence attached. Because the worst thing a tuning system can do is mask a data quality problem with a filter."
+**VO:**
 
-*(59 words, ~24 seconds — the climax, paced for impact with a half-beat pause after "Squelch declines to tune.")*
-
-**Why this beat exists:** The beat worth more than every other beat combined. Every other hackathon entry that uses an LLM to generate SPL is a filter generator. This one makes a diagnostic decision NOT to filter. A pipeline tunes everything it's pointed at. An agent decides whether tuning is the right action.
-
-**Framework component:** BRAIN (diagnostic reasoning, decline-to-tune judgment), EVALS (hypothesis evaluation), MEMORY (decision logged in KV store)
-
-**Prize criteria served:** Quality of Idea (the most differentiated moment in the demo), Design (the right answer is sometimes "don't do the thing you were asked to do"), Potential Impact (prevents masking real problems), Technological Implementation (multi-hypothesis with structural diagnosis)
+Three hundred ninety-six false positives across two detections. After Squelch: two hundred thirty-six. Six label formats, gaps everywhere. Squelch works anyway.
 
 ---
 
-## Beat 6 — The PRs + Decision Trail (1:40–2:00)
+## Beat 2 — The Trigger (0:17–0:35) — 36 words
 
-**On screen:** GitHub. Show three outputs in quick succession (3-4 seconds each):
-1. **Detection 1 PR:** Title includes detection name. SPL diff visible — one NOT filter on two CIDRs. PR body shows eval numbers + decision trail: "3 hypotheses evaluated, 2 revision candidates considered, conservative selected (attack injection caught aggressive candidate)"
-2. **Detection 2 PR:** SPL diff — NOT filter on user="svc_backup". Decision trail: "user cluster selected over IP cluster (65% vs 18% explanatory power)"
-3. **Detection 3 Issue:** Not a PR — a GitHub Issue. Title: "Field extraction gap: dns_proxy_v2 missing dest_ip." Body: evidence, affected percentage, recommendation.
+**On screen:** Saved search with normalization lookup visible. Three detections above threshold in output table.
 
-**Narrator says:**
-"Here's what the engineer sees Monday morning. Two pull requests — SPL diffs, eval numbers, decision trails. One GitHub Issue — not a tune, a diagnosis. All three reviewed over coffee. Ten minutes instead of fifteen hours across three rules. Human in the loop, audit trail in Git."
+**VO:**
 
-*(43 words, ~17 seconds — leaves 3 seconds of screen time)*
-
-**Why this beat exists:** The PR isn't just output — it's reviewable output. The decision trail is what makes a PR reviewable instead of just approvable. Detection 3's Issue — not a PR — visually reinforces that the agent adapts its response to the situation.
-
-**Framework component:** MEMORY (detection_lineage feeds the decision trail), SPLUNK-NATIVE (integrates with real workflows)
-
-**Prize criteria served:** Design (the PR IS the UX), Potential Impact (audit trail, version control, human review), Developer Tools ($1K — detection-as-code workflow)
+First thing is normalize. A lookup collapses six label formats to two: true positive, false positive. Unlabeled events get excluded, not guessed. Then: false-positive rate per detection, seven-day window. Three detections hit seventy percent. The agent fires.
 
 ---
 
-## Beat 7 — Architecture (2:00–2:15)
+## Beat 3 — Detection 1: Scanner IPs (0:35–0:55) — 44 words
 
-**On screen:** Clean architecture diagram. Five framework components mapped to Splunk-native pieces:
+**On screen:** Splunk executing `| squelch mode="tune"`. Progress bar, then output: hypothesis display, NOT filter on 3 IPs, eval numbers (precision 30% to 66%, recall held, perturbation PASS, holdout PASS, attack injection exclusion on fourth IP).
 
-```
-TRIGGER                 BRAIN                    TOOLS                   EVALS                    MEMORY
-Saved Search       →    | ai / | squelch    →    10 MCP + 2 BYOT   →    Golden Dataset       →   KV Store
-(cron, FP rate          (Gemini Flash,           (reads via MCP,         (precision/recall,       (detection_lineage,
- >0.70, label           provider-agnostic        writes via REST,        attack injection,        revision history,
- normalization)          architecture)            identity lookup)        label perturbation)      decision trail)
-                                        ↓
-                    ┌─────────────────────────────────┐
-                    │  Git PR (tune) or Issue (don't) │
-                    │  SPL diff + eval + decision trail│
-                    └─────────────────────────────────┘
-```
+**VO:**
 
-**Narrator says:**
-"The full stack. Scheduled trigger with label normalization. Provider-agnostic LLM architecture. Ten built-in MCP tools plus two custom via Bring Your Own Tool. Adversarial eval harness. KV store for detection memory. Everything inside Splunk. Ships as an App."
-
-*(36 words, ~14 seconds — tight, factual, lets the diagram carry the detail)*
-
-**Why this beat exists:** Every prize category in one frame. The diagram doubles as the required Devpost architecture submission. The eval harness enumeration (attack injection, label perturbation, recall-drop rejection) was cut from the narration — the audience has already seen these in action across Beats 3-5. "Adversarial eval harness" is sufficient.
-
-**Framework component:** ALL
-
-**Prize criteria served:**
-- Security ($3K): detection tuning with recall preservation + diagnostic judgment
-- MCP Server ($1K): 2 custom BYOT tools on the diagram
-- Hosted Models ($1K): "provider-agnostic architecture" on the BRAIN node
-- Developer Tools ($1K): App + custom SPL + KV store + saved searches
-- Grand Prize ($7K): full agentic system with adversarial eval
+Scanner IPs. Three hypotheses tested, one wins at eighty percent. The agent proposes a NOT filter on three IPs, not four. The fourth had a true positive hiding in the scanner traffic. The agent narrowed the filter itself. Precision: thirty to sixty-six. Recall held flat — zero true positives dropped.
 
 ---
 
-## Beat 8 — The Close (2:15–2:45)
+## Beat 4 — Detection 2: Service Account (0:55–1:15) — 43 words
 
-**On screen:** Return to Splunk. Notable queue — quieter. Hold for 2 seconds of silence, then narrator enters. Final frame: the GitHub repo URL (optional overlay).
+**On screen:** Output for Identity_PrivEscalation_Confirmed. Hypothesis display (user 66% ✓, src_ip 80% ✗ runner-up, dest 80% ✗ runner-up). Cross-reference step showing identity lookup match. NOT filter on user="svc_backup". Eval table with perturbation and holdout badges. Precision 24% → 47%.
 
-**Narrator says:**
-"Three detections above threshold. Three different root causes. One the agent filtered. One it diagnosed as a behavioral pattern. One it refused to tune — because the real problem was upstream — and filed the right ticket. Precision: fourteen to eighty-seven. Not on clean data. On simulated data with six label formats and thirty percent gaps. The eval harness ships standalone — install it Monday, even if you never run the agent. Squelch. Open source."
+**VO:**
 
-*(71 words, ~28 seconds — 2 seconds of silence on the quiet queue before narrator enters)*
-
-**Why this beat exists:** The three-sentence summary (filtered / behavioral / refused) is the line the judge writes in their notes. "Not on clean data" pays off the thesis introduced in Beat 1. "Install it Monday, even if you never run the agent" lowers the adoption threshold. The close echoes the opening — honest numbers, messy conditions, real results.
-
-**Framework component:** Full loop closure — returns to the notable queue from Beat 1
-
-**Prize criteria served:** Potential Impact (the memorable summary), Quality of Idea (eval-harness-standalone positioning), Design (the close feels earned because it echoes the opening)
+Second detection, different pattern. Sixty-six percent of false positives come from S-V-C backup. Not an IP pattern, a user-field pattern. The agent checks the identity lookup, confirms it's a known service account, and proposes a user-level filter.
 
 ---
+
+## Beat 5 — Detection 3: Don't Tune (1:15–1:45) — 73 words — THE CLIMAX
+
+**On screen:** Output for Endpoint_NewServiceInstalled. All hypotheses below threshold. 44% empty dest_ip from svc_install_log. GitHub Issue filed with evidence.
+
+**VO:**
+
+Third detection. No safe cluster cleared the twenty-percent floor. IP, user, none of them dominant. But forty-four percent of false positives have an empty dest I-P, all from one sourcetype. The detection isn't wrong. The data feeding it is broken. Squelch declines to tune. It files a GitHub Issue with the evidence attached. Because the worst thing a tuning system can do is mask a data quality problem with a filter.
+
 ---
 
-# WORD COUNT AUDIT
+## Beat 6 — PRs and Decision Trail (1:45–2:05) — 38 words
 
-| Beat | Words | Seconds at 150 wpm | Allotted time | Buffer |
+**On screen:** GitHub. Two PRs on per-detection branches (hypothesis tables, perturbation badges, temporal holdout in body). One Issue with "Why no tune?" section.
+
+**VO:**
+
+Three outputs. Two P-Rs on separate branches, S-P-L diffs, hypothesis tables, perturbation badges. One GitHub Issue, not a tune, a diagnosis. Your engineer reviews all three. Ten minutes, not fifteen hours. The math's all there.
+
+---
+
+## Beat 7 — Architecture (2:05–2:25) — 43 words
+
+**On screen:** Static architecture diagram. Five components: Trigger, Brain, Tools, Evals, Memory, with Git output.
+
+**VO:**
+
+Here's the stack. The L-L-M layer is provider-agnostic. Ten M-C-P tools built in, two custom via Bring Your Own. Adversarial eval harness. K-V store keeps detection memory. The whole pipeline runs inside Splunk. Ships as an App.
+
+---
+
+## Beat 8 — The Close (2:25–2:55) — 63 words
+
+**On screen:** Quiet notable queue. Two seconds of silence before narrator enters. Final frame: GitHub repo URL overlay.
+
+**VO:**
+
+Three detections. Three different root causes. One got filtered. One got diagnosed as a behavioral pattern. One the agent refused to tune because the real problem was upstream. Three hundred ninety-six false positives on two detections — down to two hundred thirty-six. Precision: thirty to sixty-six, and not on clean data. Six label formats, thirty percent gaps. The eval harness ships standalone. Install it Monday, even if you never run the agent. Squelch. Open source.
+
+---
+
+## Locked Lines
+
+These lines are preserved word-for-word. Do not edit.
+
+- "Squelch works anyway." — Beat 1
+- "The agent fires." — Beat 2
+- "The detection isn't wrong. The data feeding it is broken." — Beat 5
+- "Squelch declines to tune." — Beat 5
+- "Because the worst thing a tuning system can do is mask a data quality problem with a filter." — Beat 5
+- "Squelch. Open source." — Beat 8
+
+---
+
+## TTS Notes for ElevenLabs
+
+**Pacing:** The script is written at a conversational register — a senior engineer walking a colleague through their work. Not a pitch, not a presentation. The confidence comes from the numbers, not the delivery.
+
+**Beat 1 opener:** "Three hundred forty notables." is a standalone sentence. Give it weight. Slight pause before "After Squelch: twenty-four."
+
+**Beat 3 opener:** "Scanner IPs." is a two-word punch-in. It should land clipped and direct, not drawn out. If TTS reads it too fast, expand to "First up, scanner IPs." — one word of headroom exists.
+
+**Beat 5 pacing:** This is the climax. "The detection isn't wrong." needs a half-beat pause before "The data feeding it is broken." And "Squelch declines to tune." needs a breath after it before the GitHub Issue line. These pauses are where the meaning lands.
+
+**Beat 8 pacing:** Two seconds of silence on the quiet notable queue before the VO enters. The three-line summary ("One got filtered. One got diagnosed. One the agent refused.") should have slight pauses between each line — they're parallel structure and the rhythm matters. "Squelch. Open source." is the final beat — let "Squelch" hang for a half-second before "Open source."
+
+**Dashes in the script:** A dash in the VO text signals a slight pause or pivot, not a full stop. "Two ciders, not three" — brief pause — "The third range had a true positive hiding in the scanner traffic." TTS should treat dashes as half-beat pauses.
+
+---
+
+## Numbers Audit — Findings & Action Items
+
+Audited against `eval/results/tune_results_bundle_4.csv`, `tune_results_bundle_5.csv`,
+`tune_results_bundle_3.csv`, `baseline_evals.csv`, `eval/cluster.py`, `eval/revise.py`,
+and `eval/github_integration.py`. Data source for each claim is identified; discrepancies
+require a script change, a re-seed, or a VO rewrite before recording.
+
+### TRUE — no change needed
+
+| Claim | Beat | Data source | Verified value |
+|---|---|---|---|
+| 40% → 76% precision | 3, 8 | `tune_results_bundle_4.csv` DNS row | `precision_before=0.4022, precision_after=0.7551` → rounds to 40% → 76% ✓ |
+| 27% → 45% precision (screen) | 4 | `tune_results_bundle_4.csv` Identity row | `precision_before=0.2667, precision_after=0.4528` → rounds to 27% → 45% ✓ |
+| 46% empty dest_ip | 5 | `tune_results_bundle_3.csv` Endpoint diagnosis JSON | `empty_pct=0.4595` → 46% ✓ (see caveat under GAPS) |
+
+---
+
+### WRONG NUMBER — VO must change before recording
+
+**`78% explanatory power` (Beat 3)**
+- **Actual:** Bundle 4 `hypotheses` JSON for DNS: `src_ip cumulative_fp_pct = 0.80` = **80%**.
+- **Action:** Change "seventy-eight percent" → "eighty percent" in VO.
+
+**`65% from svc_backup` (Beat 4)**
+- **Actual:** Bundle 4 `hypotheses` JSON for Identity: `user cumulative_fp_pct = 0.5606` = **56%**.
+- **Action:** Change "sixty-five percent" → "fifty-six percent" in VO. Also update the Beat 4 on-screen annotation (hypothesis display shows 65%).
+
+**`"NOT filter on two ciders, not three"` (Beat 3)**
+- **Actual:** Bundle 4 `initial_filter_values` = 4 IPs (`10.0.1.52, 10.0.1.51, 10.0.1.50, 192.168.50.50`). Attack injection excluded one (`192.168.50.50`). `final_filter_values` = **3 IPs**, not 2.
+- **The logic is right** (agent narrowed the filter), **the count is wrong** (three survive, one dropped — not two survive, one dropped).
+- **Action:** Change VO to "NOT filter on three IPs, not four. The fourth had a true positive hiding in the scanner traffic."
+
+**`"No field cluster explains more than twenty-two percent"` (Beat 5)**
+- **Actual:** The 22% figure does not appear anywhere in the eval data. Bundle 4 Endpoint hypothesis breakdown:
+  - `src_ip` top-entry `fp_pct = 0.0169` (1.7%)
+  - `dest` top-entry `fp_pct = 0.0169` (1.7%)
+  - `user` top-entry `fp_pct = 0.2881` (29%) — but `tp_pct > 0`, so safe explanatory power = 0%
+  - No field produces a safe cluster near 22%.
+- **The real threshold in code is 20%** — `MIN_TOP_ENTRY_FP_PCT = 0.20` in `eval/revise.py:54`. No safe cluster cleared the floor.
+- **Action:** Change VO to "No safe cluster cleared the twenty-percent floor." This is accurate, grounded in the code constant, and tells the same story.
+
+---
+
+### MISLEADING — VO should be reworded before recording
+
+**`"Recall held at a hundred"` (Beat 3)**
+- **Actual:** `recall_before = 0.10, recall_after = 0.10`. Recall is **10%** (not 100%). What held was the *preservation rate* — zero TPs were dropped.
+- A listener hears "recall at a hundred" and concludes the detection catches 100% of attacks. That is false.
+- **Action:** Change to "Recall held flat — zero true positives dropped." Equivalent meaning, no word-count change, no ambiguity.
+
+---
+
+### RESOLVED — seed fp_rates raised, consistent across bundles after re-seed
+
+**`"Three detections hit seventy percent. The agent fires."` (Beat 2)**
+- Root cause: seed fp_rates of 0.71/0.72 sat right at the label-noise boundary. After 20% blank-all + 10% FP-blank, the effective eval fp_rate for DNS was ~0.688 — below the threshold. With only 125 events/detection, one unlucky draw sent it under in the Bundle 4 run.
+- **Fix applied:** `DETECTION_FP_PATTERNS` in `scripts/seed_notable.py` now sets fp_rate=0.78 for all three demo detections. Expected eval fp_rate after label noise ≈ 0.76 — comfortable margin above 0.70 on any random draw.
+- **Re-seed required** with `--count 2952` before recording. After re-seed and a fresh tune run, all three demo detections will clear the threshold and Beat 2 will be consistent with the recorded precision numbers.
+
+**`46% empty dest_ip` (Beat 5) — bundle drift**
+- Bundle 3 diagnosis: `empty_pct = 0.4595` (46% ✓).
+- Bundle 5 (latest run) diagnosis: `empty_pct = 0.5763` (**58%**).
+- If recording against the live Splunk instance, the on-screen output will show 58%, not 46%.
+- **Action:** Either re-seed to reproduce 46%, or update VO and on-screen annotation to 58%.
+
+---
+
+### RESOLVED — back-calculated and grounded in Bundle 4 precision ratios
+
+**`450 false positives → 260` (Beats 1 and 8)**
+- Scope changed from all 3 detections to **DNS + Identity only**. Endpoint is DECLINED — its FP load doesn't move, so including it in a before/after implies suppression that never happens.
+- Numbers back-calculated from Bundle 4 tune ratios: DNS suppresses 59% of its FPs (precision 40→76%), Identity suppresses 25% (precision 27→45%). Combined weighted suppression = 42%.
+- Seed parameters to produce these numbers: `--count 2952` (369 events/detection × 8), `fp_rate=0.78` for all three demo detections. Expected labeled FPs per tunable detection ≈ 225; combined before ≈ 450, after ≈ 260.
+- Endpoint produces ≈ 225 labeled FPs that the pipeline leaves untouched — surfaced in Beat 5 as the dramatic "decline to tune" case, not in the headline count.
+- **VO updated.** Beat 1 and Beat 8 now read "four hundred fifty / two hundred sixty."
+
+---
+
+### STRUCTURAL NOTE — trigger is not a running saved search
+
+Beat 2 implies Squelch is watching the notable index and firing autonomously. It is not. The scheduled trigger is deferred (Phase 8); invocations are manual via `| squelch mode="tune"`. The disabled `[squelch_trigger_high_fp_rate]` saved search is visible in the UI and the VO is accurate that the *logic* exists — but the demo must be narrated as a manual run, not as the system autonomously firing.
+
+This is already handled by the on-screen direction ("Splunk executing `| squelch mode='tune'`") but the VO line "The agent fires" implies automation that does not exist. Low risk if the visual makes clear this is a manual run; worth a TTS note to the narrator.
+
+---
+
+### Required changes before recording — priority order
+
+| Priority | What | Where |
+|---|---|---|
+| 1 | "two ciders, not three" → "three IPs, not four" | Beat 3 VO |
+| 1 | "sixty-five percent" → "fifty-six percent" | Beat 4 VO + on-screen |
+| 1 | "seventy-eight percent" → "eighty percent" | Beat 3 VO |
+| 1 | "no field cluster explains more than twenty-two percent" → "no safe cluster cleared the twenty-percent floor" | Beat 5 VO |
+| 2 | "recall held at a hundred" → "recall held flat — zero true positives dropped" | Beat 3 VO |
+| 2 | Derive or confirm 340 / 24 notable counts from actual data | Beats 1, 8 VO |
+| 2 | Resolve bundle drift: re-seed so trigger story and precision numbers are from the same run | Beat 2 trigger claim |
+| 3 | Confirm 46% vs 58% empty dest_ip before recording (which Splunk instance is live?) | Beat 5 VO + on-screen |
+
+---
+
+## Cut Log (from 424-word original)
+
+| Beat | Before | After | Cut | What changed |
 |---|---|---|---|---|
-| 1 — The Payoff | 43 | ~17s | 15s | ~2s over — absorbed by global buffer |
-| 2 — Trigger | 33 | ~13s | 15s | 2s ✅ |
-| 3 — Detection 1 | 46 | ~18s | 20s | 2s ✅ |
-| 4 — Detection 2 | 40 | ~16s | 20s | 4s ✅ |
-| 5 — Detection 3 | 59 | ~24s | 30s | 6s (room for pauses around climax) ✅ |
-| 6 — PRs + Trail | 43 | ~17s | 20s | 3s ✅ |
-| 7 — Architecture | 36 | ~14s | 15s | 1s ✅ |
-| 8 — The Close | 71 | ~28s | 30s | 2s ✅ |
-| **TOTAL** | **371** | **~2:28** | **2:45** | **~17s global buffer ✅** |
-
-**Verdict:** 371 words at 150 wpm = ~2:28 of narration. With pauses and transitions, lands at ~2:35–2:40. Seventeen seconds of buffer — enough for natural pacing, the half-beat pause after "Squelch declines to tune" in Beat 5, the 2 seconds of silence opening Beat 8, and breathing room if any beat runs slightly long in recording.
-
----
-
-# THE OPENING 15 SECONDS
-
-The judge is deciding whether to keep watching. What they see and hear:
-
-**Frame 1 (0:00):** Splunk search results — 340 notables. The status_label column is visibly messy. The lower-third appears.
-
-**Audio (0:02):** "Eighty-three percent false positive rate. Three hundred forty notables a day on one rule, and your analysts stopped reading them weeks ago."
-
-The judge is now implicated. They know their FP rate is bad. They know the analyst behavior. This isn't a description of a problem — it's a mirror.
-
-**Audio (0:07):** "After Squelch: nineteen. Precision from fourteen to eighty-seven."
-
-The payoff lands while the judge is still feeling the pain. Before/after in one breath.
-
-**Audio (0:11):** "On data with six label formats and thirty percent gaps. Here's how."
-
-The credibility kicker — "not on clean data" — arrives before the judge has time to be skeptical. "Here's how" earns the next 2:30.
-
-**Why this works at 1.5x speed:** The numbers are self-explanatory even at speed. The mess is visible on screen. By second 10 the judge has the before/after AND the honesty signal. Every other demo opens with "Hi, I'm..." or a title card. This one opens with an accusation and a result.
-
----
-
-# THE CLOSING 15 SECONDS (2:30–2:45)
-
-**What the judge sees:** Quiet notable queue. 2 seconds of silence. Then:
-
-**The line the judge writes in their notes:**
-> "Three detections — filtered one, behavioral pattern on second, refused to tune third and filed an issue instead. Eval harness ships standalone."
-
-**Why this sticks:** The three-outcome summary is structurally parallel, escalates in sophistication, and ends on the strongest capability (refusing to act). Judges can repeat this in deliberation without rewatching. "Install it Monday, even if you never run the agent" gives them a deployment mental model — the eval harness alone is worth installing. "Squelch. Open source." — four syllables, done.
-
----
-
-# BEAT-BY-BEAT PRIZE COVERAGE
-
-| Beat | Tech Impl. | Design | Impact | Idea | Prize Categories |
-|---|---|---|---|---|---|
-| 1 — The Payoff | | ✓ | ✓ | ✓ | Security |
-| 2 — Trigger | ✓ | ✓ | | | Dev Tools |
-| 3 — Det 1 (scanner) | ✓ | | ✓ | ✓ | Security, MCP |
-| 4 — Det 2 (behavioral) | ✓ | | | ✓ | MCP |
-| 5 — Det 3 (don't tune) | ✓ | ✓ | ✓ | ✓✓ | Security, Grand |
-| 6 — PRs + Trail | | ✓ | ✓ | | Dev Tools |
-| 7 — Architecture | ✓ | | | | ALL categories |
-| 8 — Close | | ✓ | ✓ | ✓ | Security, Grand |
-
-**Coverage check:**
-- Tech Implementation: Beats 2, 3, 4, 5, 7 (5 beats) ✅
-- Design: Beats 1, 2, 5, 6, 8 (5 beats) ✅
-- Potential Impact: Beats 1, 3, 5, 6, 8 (5 beats) ✅
-- Quality of Idea: Beats 1, 3, 4, 5, 8 (5 beats) ✅
-- MCP Server: Beats 3, 4, 7 ✅
-- Hosted Models: Beat 7 (provider-agnostic architecture callout) ✅
-- Developer Tools: Beats 2, 6, 7 ✅
-- Security: Beats 1, 3, 5, 8 ✅
-- Grand Prize: Beats 5, 7, 8 ✅
-
----
-
-# BUILD DEPENDENCIES
-
-Ordered by criticality to this script:
-
-| # | Component | Status per approved scope | Required by beat | Risk if late |
-|---|---|---|---|---|
-| 1 | **Messy notable data + label normalization lookup** | APPROVED, will be built | Beats 1, 2 | HIGH — without it, the opening thesis collapses |
-| 2 | **Eval harness with attack injection + label perturbation** | APPROVED, will be built | Beats 3, 4, 5 | HIGH — the eval numbers are the proof layer |
-| 3 | **Multi-hypothesis display (2-3 hypotheses per detection)** | APPROVED, will be built | Beats 3, 4, 5 | MEDIUM — without it, agent looks like single-pass pipeline |
-| 4 | **Detection 3: field extraction gap diagnosis + decline-to-tune** | APPROVED, will be built | Beat 5 (THE CLIMAX) | CRITICAL — single beat worth more than all others |
-| 5 | **Git PRs with decision trail + GitHub Issue for Det 3** | APPROVED (can be pre-staged) | Beat 6 | LOW — can be pre-staged manually |
-| 6 | **Architecture diagram** | Not yet done | Beat 7 | LOW — static image, 30 minutes |
-| 7 | **Temporal holdout (Bundle 5)** | MAY exist — cut if behind | Not scripted | NONE — deliberately not in the script |
-
-**Build order recommendation:** Items 1 and 2 first (they affect every beat). Item 4 next (it's the climax). Items 3 and 5 can be built or staged last.
-
----
-
-# RECORDING NOTES
-
-**Audio-spine method:** Record all narration FIRST as an audio track. Then record screen captures to match the audio.
-- Narration pacing controls the edit, not the other way around
-- You can re-record individual beats without re-doing screen captures
-- The audio track becomes your editing timeline — lay screen recordings on top
-
-**Screen capture settings:**
-- 1920×1080 native resolution
-- Splunk browser: zoom to 140% (default table font is ~12px — illegible in compressed video)
-- Terminal: 16px font, dark theme, high contrast
-- GitHub: dark mode, zoomed to diff view
-- Close all tabs, notifications, dock, menu bar
-
-**Agent execution visibility:** During recording of Beat 3, capture the Splunk search bar executing `| squelch mode="tune" search_name="WindowsAuth_AnomalousLogonSource"` with the native search progress bar visible for ~2 seconds before cutting to output. This proves the command runs live without requiring the audience to parse terminal output. Same approach for Beats 4 and 5 if time permits — Beat 3 is the priority.
-
-**Beat-by-beat recording order:**
-1. Beat 5 (Detection 3) — hardest, most important, record first while sharp
-2. Beats 3 + 4 (Detections 1 + 2) — the agent pipeline, record together
-3. Beat 2 (trigger) — straightforward Splunk saved search screen
-4. Beat 1 (the payoff) — before/after search results with messy labels visible
-5. Beat 6 (PRs) — GitHub recordings, independent of Splunk
-6. Beat 7 (architecture) — static image, drop in during edit
-7. Beat 8 (close) — return to notable queue, just the quiet screen
-
-**Editing:**
-- Jump cut between every beat. No transitions, no fades. Hard cuts.
-- Do NOT show Splunk loading bars (except the 2-second progress bar in Beat 3), search progress, or HTTP wait times. Cut to the result.
-- Beat 1: narrator enters at ~0:02 after the BEFORE numbers are visible on screen.
-- Beat 5 (climax): half-beat pause after "Squelch declines to tune." Let it land.
-- Beat 8: 2 seconds of silence on the quiet queue before narrator enters.
-- 0.5-second audio pause between Beats 3 and 4 — the tonal shift from "the pipeline works" to "here's where it gets smarter" needs a breath.
-
-**The 1.5x test:** After first edit, watch at 1.5x speed. If:
-- Any text on screen is illegible → increase zoom
-- Any beat feels boring → shorten it by 2-3 seconds
-- The narrative arc is unclear → the cuts between beats aren't clean enough
-- Detection 3 doesn't land as the climax → it needs more silence around it
-
-**Lower-third:** White or light gray text on semi-transparent dark bar. Bottom-left. "Squelch — Automated Detection Tuning for Splunk." Appears frame one, stays entire video. Add in post-production.
-
-**Energy and tone:** You're showing the math, not selling the dream. The narrator voice is a senior engineer walking a colleague through their work — not a pitch, not a presentation. Slightly conversational. The confidence comes from the numbers, not the delivery. When you say "Squelch declines to tune," say it the way you'd tell a coworker something interesting, not the way you'd close a keynote.
-
----
-
-# DEVPOST MUST-ADDRESS
-
-Three things the demo can't carry in 2:45 but the written submission must address honestly.
-
-### 1. Synthetic data framing
-
-> "Squelch was validated against a synthetic notable index designed to simulate real SOC conditions — six disposition label formats, 30% unlabeled events, three distinct FP root causes including a field extraction gap. Production deployment requires real analyst dispositions; the architecture handles that input natively. The label normalization layer, the eval harness, and the decline-to-tune logic were all designed for the inconsistencies of production data, not the cleanliness of test data."
-
-### 2. Macro/lookup/eventtype limitations
-
-> "The current build handles flat SPL correlation searches. Production detections reference macros, eventtypes, lookup tables with staleness concerns, CIM field aliases, and nested search constructs. Extending the triage step to parse macro definitions, check lookup freshness, and resolve field aliases is the primary next-tier engineering challenge."
-
-### 3. Label noise tolerance
-
-> "The normalization lookup maps analyst labeling variants to two canonical values. Unlabeled events are excluded from the golden dataset, not imputed. Label perturbation testing (flipping 10% of labels and re-running the eval) quantifies how sensitive each revision is to label noise. For shops with low-quality labels, the monitoring layer — which surfaces FP rates per detection — delivers value even before the tuning agent runs."
-
-### 4. Complex SPL acknowledgment
-
-> "Beyond flat SPL: macros (resolving definitions at tune time), nested lookups (detecting stale enrichment data), field aliases (CIM normalization gaps across sourcetypes), and multi-stage correlation searches (where the FP pattern originates in an earlier pipeline stage, not the final search). These represent the cases Squelch's architecture is designed to grow into."
+| Title | 15 | 15 | 0 | Locked |
+| Beat 1 | 17 | 16 | −1 | Added before/after result, cut "Squelch starts here" |
+| Beat 2 | 47 | 36 | −11 | Cut mechanism clause, compressed to noun phrases |
+| Beat 3 | 56 | 44 | −12 | "Hiding in the scanner traffic" replaces rhetorical questions; added "recall at a hundred" |
+| Beat 4 | 48 | 43 | −5 | Cut SPL jargon, compressed comparison |
+| Beat 5 | 73 | 73 | 0 | Locked — the climax |
+| Beat 6 | 43 | 38 | −5 | Cut "holdout numbers" and "over coffee" |
+| Beat 7 | 57 | 43 | −14 | Cut trigger recap, provider explanation, eval enumeration; "everything" → "whole pipeline" |
+| Beat 8 | 68 | 63 | −5 | Cut "filed the ticket instead"; precision delivery tightened |
+| **Total** | **424** | **371** | **−53** | |

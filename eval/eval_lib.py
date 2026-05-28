@@ -25,6 +25,12 @@ from pathlib import Path
 # the recall gate (gate_revision) remains the safety mechanism.
 PERTURB_RECALL_PASS_THRESHOLD = 0.05
 
+# Bundle 5 Sessions 38-39: holdout precision must not degrade vs training.
+# 0.0 means the revision is allowed to hold flat but not drop. Informational
+# only — the recall gate remains the safety mechanism.
+HOLDOUT_PRECISION_FLOOR_DELTA = 0.0
+HOLDOUT_SPLIT_PCT = 0.70  # 70% training, 30% holdout
+
 try:
     # Vendored: squelch_eval/{utils,eval_lib}.py
     from .utils import load_lookup
@@ -351,6 +357,109 @@ def perturb_and_eval(
         "n_trials": n_trials,
         "flip_pct": flip_pct,
         "pass": abs(max_recall_delta) < PERTURB_RECALL_PASS_THRESHOLD,
+    }
+
+
+def _get_time_boundaries(service, golden_query: str) -> tuple[float, float]:
+    """Query golden data for min/max _time. Returns (earliest_epoch, latest_epoch)."""
+    stats_query = f"search {golden_query} | stats min(_time) as t_min max(_time) as t_max"
+    stream = service.jobs.oneshot(stats_query, output_mode="json", count=1)
+    rows = _read_json_results(stream)
+    row = rows[0]
+    return float(row["t_min"]), float(row["t_max"])
+
+
+def temporal_holdout_eval(
+    service,
+    detection_name: str,
+    original_spl: str,
+    revised_spl: str | None,
+    golden_query: str,
+    *,
+    normalization_csv: Path | None = None,
+    split_pct: float = HOLDOUT_SPLIT_PCT,
+) -> dict:
+    """Split golden data temporally, evaluate both SPLs on both windows.
+
+    For accepted tunes: compares precision lift on training vs holdout to
+    detect overfitting. For declined/rejected tunes: revised_spl is None,
+    reports baseline temporal metrics only (always pass=True).
+    """
+    t_min, t_max = _get_time_boundaries(service, golden_query)
+    t_split = t_min + split_pct * (t_max - t_min)
+
+    t_min_str = str(int(t_min))
+    t_split_str = str(int(t_split))
+    t_max_str = str(int(t_max))
+
+    baseline_train = evaluate_detection(
+        service, detection_name, original_spl, golden_query,
+        earliest=t_min_str, latest=t_split_str,
+        normalization_csv=normalization_csv,
+    )
+    baseline_holdout = evaluate_detection(
+        service, detection_name, original_spl, golden_query,
+        earliest=t_split_str, latest=t_max_str,
+        normalization_csv=normalization_csv,
+    )
+
+    if revised_spl is not None:
+        revised_train = evaluate_detection(
+            service, detection_name, revised_spl, golden_query,
+            earliest=t_min_str, latest=t_split_str,
+            normalization_csv=normalization_csv,
+        )
+        revised_holdout = evaluate_detection(
+            service, detection_name, revised_spl, golden_query,
+            earliest=t_split_str, latest=t_max_str,
+            normalization_csv=normalization_csv,
+        )
+        training_precision_lift = round(
+            revised_train.precision - baseline_train.precision, 4
+        )
+        holdout_precision_lift = round(
+            revised_holdout.precision - baseline_holdout.precision, 4
+        )
+        training_recall_delta = round(
+            revised_train.recall - baseline_train.recall, 4
+        )
+        holdout_recall_delta = round(
+            revised_holdout.recall - baseline_holdout.recall, 4
+        )
+        pass_flag = (
+            holdout_precision_lift >= HOLDOUT_PRECISION_FLOOR_DELTA
+            and holdout_recall_delta >= 0
+        )
+        return {
+            "split_pct": split_pct,
+            "t_split_epoch": t_split,
+            "training_events": baseline_train.total_dataset_size,
+            "holdout_events": baseline_holdout.total_dataset_size,
+            "baseline_train_precision": baseline_train.precision,
+            "baseline_holdout_precision": baseline_holdout.precision,
+            "revised_train_precision": revised_train.precision,
+            "revised_holdout_precision": revised_holdout.precision,
+            "training_precision_lift": training_precision_lift,
+            "holdout_precision_lift": holdout_precision_lift,
+            "training_recall_delta": training_recall_delta,
+            "holdout_recall_delta": holdout_recall_delta,
+            "pass": pass_flag,
+        }
+
+    return {
+        "split_pct": split_pct,
+        "t_split_epoch": t_split,
+        "training_events": baseline_train.total_dataset_size,
+        "holdout_events": baseline_holdout.total_dataset_size,
+        "baseline_train_precision": baseline_train.precision,
+        "baseline_holdout_precision": baseline_holdout.precision,
+        "revised_train_precision": None,
+        "revised_holdout_precision": None,
+        "training_precision_lift": None,
+        "holdout_precision_lift": None,
+        "training_recall_delta": None,
+        "holdout_recall_delta": None,
+        "pass": True,
     }
 
 

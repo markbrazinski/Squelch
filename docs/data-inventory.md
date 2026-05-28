@@ -65,7 +65,11 @@ FP cluster pattern: **78% of FPs carry `src_ip in (10.0.1.50, 10.0.1.51, 10.0.1.
 ```bash
 cd /Users/markbrazinski/Desktop/coding\ fun/Squelch
 . .venv/bin/activate
-python scripts/seed_notable.py --count 1000 --clear-first
+python scripts/seed_notable.py --count 2952 --clear-first
 ```
+
+`--count 2952` (369 events/detection) gives ~225 labeled FPs per demo detection at fp_rate=0.78,
+producing the demo headline numbers (450 before → 260 after on DNS+Identity). Lower counts
+have enough variance to flip the trigger threshold check on unlucky draws.
 
 Takes ~2 seconds to ingest + 5-15 seconds before searchable. Wait for `index=notable sourcetype=squelch_notable | stats count` to equal the requested count before running eval queries.

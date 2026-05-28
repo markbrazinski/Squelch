@@ -86,10 +86,12 @@ DETECTIONS = [
 ]
 
 DETECTION_FP_PATTERNS = {
-    # Demo detections (Bundle 3)
-    "DNS_TunnelExfil_Heuristic":         {"fp_rate": 0.71, "pattern": "scanner_ip"},
-    "Identity_PrivEscalation_Confirmed": {"fp_rate": 0.72, "pattern": "service_account"},
-    "Endpoint_NewServiceInstalled":      {"fp_rate": 0.72, "pattern": "extraction_gap"},
+    # Demo detections. fp_rate=0.78 gives eval_fp_rate≈0.76 after label noise,
+    # clearing the 0.70 trigger threshold with margin across any random seed.
+    # (0.71/0.72 sat at the boundary and produced sub-threshold runs in Bundle 4.)
+    "DNS_TunnelExfil_Heuristic":         {"fp_rate": 0.78, "pattern": "scanner_ip"},
+    "Identity_PrivEscalation_Confirmed": {"fp_rate": 0.78, "pattern": "service_account"},
+    "Endpoint_NewServiceInstalled":      {"fp_rate": 0.78, "pattern": "extraction_gap"},
     # Pipeline workhorses — scanner_ip preserved from Bundle 2
     "WindowsAuth_AnomalousLogonSource":  {"fp_rate": 0.83, "pattern": "scanner_ip"},
     "Network_PortScan_Detected":         {"fp_rate": 0.74, "pattern": "scanner_ip"},

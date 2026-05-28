@@ -1,0 +1,9 @@
+detection_name,decision,decision_reason,fp_rate_before,precision_before,recall_before,fp_rate_after,precision_after,recall_after,label_confidence,pr_url,pr_number,issue_url,issue_number,github_error,diagnosis,decision_timestamp,holdout_pass,holdout_training_precision_lift,holdout_holdout_precision_lift
+DNS_TunnelExfil_Heuristic,accepted,,0.7004,0.2996,0.0772,0.3443,0.6557,0.0772,0.7585,https://github.com/markbrazinski/Squelch/pull/36,36,,,,,1779885012,True,0.3434,0.3726
+Data_BulkDownload_Sensitive,accepted,,0.0194,0.9806,0.2971,0.0098,0.9902,0.2971,0.782,https://github.com/markbrazinski/Squelch/pull/16,16,,,,,1779589738,,,
+Endpoint_NewServiceInstalled,declined,field_extraction_gap,0.7435,0.2565,0.0666,,,,0.7585,,,https://github.com/markbrazinski/Squelch/issues/38,38,,"{""type"": ""field_extraction_gap"", ""field"": ""dest_ip"", ""empty_pct"": 0.445, ""sourcetype"": ""svc_install_log"", ""sourcetype_pct"": 1.0, ""fp_count"": 200, ""empty_count"": 89, ""recommendation"": ""Fix field extraction for 'dest_ip' in props.conf for sourcetype_tag='svc_install_log'. 89/200 FPs (44%) have empty dest_ip; 100% of those are tagged svc_install_log.""}",1779885208,True,,
+Identity_PrivEscalation_Confirmed,accepted,,0.7628,0.2372,0.0627,0.5255,0.4745,0.0627,0.7585,https://github.com/markbrazinski/Squelch/pull/37,37,,,,,1779885119,True,0.2619,0.1648
+Network_PortScan_Detected,accepted,,0.7767,0.2233,0.0676,0.4103,0.5897,0.0676,0.782,https://github.com/markbrazinski/Squelch/pull/10,10,,,,,1779589703,,,
+Process_RareParentChild,accepted,,0.2333,0.7667,0.2029,0.1266,0.8734,0.2029,0.782,https://github.com/markbrazinski/Squelch/pull/13,13,,,,,1779589723,,,
+Web_SuspiciousUserAgent,accepted,,0.3804,0.6196,0.1676,0.1972,0.8028,0.1676,0.782,https://github.com/markbrazinski/Squelch/pull/12,12,,,,,1779589717,,,
+WindowsAuth_AnomalousLogonSource,accepted,,0.8737,0.1263,0.0353,0.7692,0.2308,0.0353,0.782,https://github.com/markbrazinski/Squelch/pull/9,9,,,,,1779589694,,,
