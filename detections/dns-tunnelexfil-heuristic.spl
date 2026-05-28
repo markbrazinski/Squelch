@@ -1,1 +1,1 @@
-# dns-tunnelexfil-heuristic
+search index=notable sourcetype=squelch_notable search_name="DNS_TunnelExfil_Heuristic" NOT src_ip IN ("10.0.1.51","10.0.1.50","10.0.1.52","192.168.152.63","192.168.25.69","192.168.139.121","192.168.101.222","192.168.65.146","192.168.227.157")
