@@ -73,7 +73,7 @@ Three outputs. Two P-Rs on separate branches — S-P-L diffs, hypothesis tables,
 *[Architecture diagram on screen]*
 
 **VO:**
-Here's the stack. The L-L-M writes the filter — that's the easy part. The eval harness proves it's safe — that's the hard part. L-L-M layer's provider-agnostic. Ten M-C-P tools built in, two custom bring-your-own — one triggers the tune, one returns false-positive rates. K-V store keeps detection memory. Whole pipeline runs inside Splunk, ships as an App. The eval harness ships standalone. Install it Monday, even if you never run the agent. Squelch. Open source.
+Here's the stack. The L-L-M writes the filter — that's the easy part. The eval harness proves it's safe — that's the hard part. L-L-M layer's provider-agnostic. Ten M-C-P tools built in, one custom bring-your-own — it returns live false-positive rates from the notable index. K-V store keeps detection memory. Whole pipeline runs inside Splunk, ships as an App. The eval harness ships standalone. Install it Monday, even if you never run the agent. Squelch. Open source.
 
 **Pacing:** Rattle the specs briskly while the diagram's on screen. Slow back down on "The eval harness ships standalone." Pause before "Squelch. Open source." Let the last two words land in silence.
 
@@ -120,7 +120,7 @@ Nine touchpoints. No gap longer than 25 seconds after 0:43.
 |-------|-----------|---------------------|
 | **Grand Prize ($7K)** | Cold Open, Det 1, Det 3, Close | Mystery→evidence→verdict arc. Core inversion. Refusal as intelligence. |
 | **Security ($3K)** | Det 1, Det 3, Outputs | Recall preservation, synthetic TP testing, diagnostic refusal, evidence trail. |
-| **Best Use of MCP ($1K)** | Det 2, Close | Identity lookup during detection. "Ten built in, two custom — one triggers the tune, one returns false-positive rates." |
+| **Best Use of MCP ($1K)** | Det 2, Close | Identity lookup during detection. "Ten built in, one custom — returns live FP rates from the notable index." |
 | **Best Use of Dev Tools ($1K)** | Normalize, Outputs, Close | Lookup table, SPL diffs, KV store, ships as a Splunk App. |
 
 ---
@@ -137,4 +137,4 @@ Nine touchpoints. No gap longer than 25 seconds after 0:43.
 
 5. **Close:** "The L-L-M writes the filter — that's the easy part. The eval harness proves it's safe — that's the hard part." — Parallel structure. Same cadence both times, emphasis shifts from "easy" to "hard." If it sounds rehearsed, it fails. If it sounds like a realization, it's the best line in the demo.
 
-6. **Close:** "Two custom bring-your-own — one triggers the tune, one returns false-positive rates." — Long breath group. Test whether you can deliver it in one pass or need a micro-pause after "bring-your-own."
+6. **Close:** "One custom bring-your-own — it returns live false-positive rates from the notable index." — Straightforward. No breath issue.
