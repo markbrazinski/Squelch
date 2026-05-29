@@ -14,6 +14,7 @@ Vendored to /Applications/Splunk/etc/apps/squelch/bin/lib/squelch_eval/.
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 import time
@@ -131,15 +132,79 @@ def create_ref(repo: str, branch: str, base_sha: str, *, token: str) -> dict:
     )
 
 
+def _commit_spl_file(
+    repo: str, branch: str, base_sha: str,
+    detection_name: str, original_spl: str, revised_spl: str,
+    *, token: str,
+) -> str:
+    """Commit original + revised SPL files onto branch. Returns new commit SHA.
+
+    Writes two files so the PR diff shows the before/after inline:
+      detections/<slug>.spl          — revised (the proposed change)
+      detections/<slug>.original.spl — original (base for the diff)
+    """
+    slug = _slugify(detection_name)
+
+    def _blob(content: str) -> str:
+        encoded = base64.b64encode(content.encode()).decode()
+        return _post(
+            f"{_API}/repos/{repo}/git/blobs",
+            {"content": encoded, "encoding": "base64"},
+            token=token,
+        )["sha"]
+
+    original_sha = _blob(original_spl)
+    revised_sha = _blob(revised_spl)
+
+    base_tree = _get(
+        f"{_API}/repos/{repo}/git/commits/{base_sha}", token=token
+    )["tree"]["sha"]
+
+    tree = _post(
+        f"{_API}/repos/{repo}/git/trees",
+        {
+            "base_tree": base_tree,
+            "tree": [
+                {"path": f"detections/{slug}.spl",
+                 "mode": "100644", "type": "blob", "sha": revised_sha},
+                {"path": f"detections/{slug}.original.spl",
+                 "mode": "100644", "type": "blob", "sha": original_sha},
+            ],
+        },
+        token=token,
+    )
+
+    commit = _post(
+        f"{_API}/repos/{repo}/git/commits",
+        {
+            "message": f"squelch: propose NOT filter for {detection_name}",
+            "tree": tree["sha"],
+            "parents": [base_sha],
+        },
+        token=token,
+    )
+    commit_sha = commit["sha"]
+
+    _patch(
+        f"{_API}/repos/{repo}/git/refs/heads/{branch}",
+        {"sha": commit_sha},
+        token=token,
+    )
+    return commit_sha
+
+
 def create_pr_for_detection(
     repo: str, detection_name: str, title: str, body: str, *,
     token: str, base: str = "main", label: str | None = DEFAULT_LABEL,
+    original_spl: str = "", revised_spl: str = "",
 ) -> dict:
-    """Open a PR on a per-detection branch.
+    """Open a PR on a per-detection branch with an actual SPL file commit.
 
-    Sequence: GET base HEAD → create_ref(squelch/tune/<slug>-<epoch>) →
-    create_pr from that branch. On 422 (collision in the same epoch
-    second), retry once with epoch+1 before propagating.
+    Sequence:
+      1. GET base HEAD sha
+      2. create_ref(squelch/tune/<slug>-<epoch>)
+      3. Commit original + revised SPL files onto that branch
+      4. Open PR — branch now has real content so GitHub accepts it
 
     Returns the create_pr result extended with the chosen `branch`.
     """
@@ -158,27 +223,15 @@ def create_pr_for_detection(
         branch = f"squelch/tune/{slug}-{ts}"
         create_ref(repo, branch, base_sha, token=token)
 
-    try:
-        pr = create_pr(repo, title, body, token=token,
-                       head=branch, base=base, label=label)
-    except urllib.error.HTTPError as exc:
-        if exc.code != 422:
-            raise
-        # Branch has no commits ahead of base — fall back to proposals branch.
-        # Do NOT close existing open PRs: each detection's PR should remain open
-        # until a human closes it. If proposals branch already has an open PR,
-        # surface a github_error rather than silently closing the previous one.
-        try:
-            pr = create_pr(repo, title, body, token=token,
-                           head=PROPOSALS_BRANCH, base=base, label=label)
-        except urllib.error.HTTPError as exc2:
-            if exc2.code != 422:
-                raise
-            raise RuntimeError(
-                f"squelch/proposals already has an open PR. "
-                f"Close or merge it before running another tune on a no-commit branch."
-            ) from exc2
-        branch = PROPOSALS_BRANCH
+    if original_spl or revised_spl:
+        _commit_spl_file(
+            repo, branch, base_sha, detection_name,
+            original_spl or "", revised_spl or "",
+            token=token,
+        )
+
+    pr = create_pr(repo, title, body, token=token,
+                   head=branch, base=base, label=label)
     return {**pr, "branch": branch}
 
 
