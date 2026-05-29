@@ -1,0 +1,7 @@
+status_label,normalized_label
+true_positive,true_positive
+false_positive,false_positive
+resolved,false_positive
+closed,false_positive
+fp,false_positive
+FP - scanner,false_positive

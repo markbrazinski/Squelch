@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "squelch-harness"
+version = "0.1.0"
+description = "Adversarial eval harness for Splunk detections — ships standalone, no agent required"
+readme = "squelch_harness/README.md"
+license = "MIT"
+requires-python = ">=3.9"
+authors = [{ name = "Mark Brazinski", email = "mark@brazinski.us" }]
+keywords = ["splunk", "detection", "security", "eval", "false-positive"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Security",
+    "Topic :: Software Development :: Testing",
+]
+dependencies = [
+    "splunk-sdk>=2.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/markbrazinski/Squelch"
+Repository = "https://github.com/markbrazinski/Squelch"
+
+[tool.setuptools.packages.find]
+include = ["squelch_harness*"]
+
+[tool.setuptools.package-data]
+squelch_harness = ["lookups/*.csv"]
