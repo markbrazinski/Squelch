@@ -1,0 +1,1 @@
+search index=botsv3 sourcetype=stream:dns query=* | eval qlen=len(query) | search (qlen>40 OR query="*coinhive*") NOT src_ip IN ("172.16.0.178","FE80:0000:0000:0000:12DD:B1FF:FEB7:EBA8","192.168.9.50","172.16.0.127","172.16.0.13","172.16.0.145","172.31.38.181","172.16.197.137")

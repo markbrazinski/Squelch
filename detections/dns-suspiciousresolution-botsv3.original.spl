@@ -1,0 +1,1 @@
+search index=botsv3 sourcetype=stream:dns query=* | eval qlen=len(query) | search (qlen>40 OR query="*coinhive*")
