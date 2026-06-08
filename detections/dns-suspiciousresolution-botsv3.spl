@@ -1,0 +1,1 @@
+search index=notable sourcetype=squelch_notable host=squelch-seed search_name="DNS_SuspiciousResolution_Botsv3" NOT src_ip IN ("172.16.0.178","192.168.9.50","FE80:0000:0000:0000:12DD:B1FF:FEB7:EBA8","172.31.12.76","172.16.0.127","172.16.0.145","172.31.38.181","172.16.197.137")
