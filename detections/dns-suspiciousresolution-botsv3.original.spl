@@ -1,0 +1,1 @@
+search index=notable sourcetype=squelch_notable host=squelch-seed search_name="DNS_SuspiciousResolution_Botsv3"
