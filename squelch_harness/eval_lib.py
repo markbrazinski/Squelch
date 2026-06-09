@@ -102,7 +102,10 @@ def _read_json_results(stream) -> list[dict]:
 
 def load_golden_query(conf_path: Path, stanza: str = "default") -> tuple[str, str, str]:
     """Load (query, earliest, latest) from a golden_dataset.conf stanza."""
-    cfg = configparser.ConfigParser()
+    # interpolation=None: the `query` values are raw SPL and may contain `%`
+    # (strftime formats, like("...%foo%") patterns). ConfigParser's default
+    # BasicInterpolation treats `%` as a sigil and would raise on those.
+    cfg = configparser.ConfigParser(interpolation=None)
     cfg.read(conf_path)
     if stanza not in cfg:
         raise KeyError(f"stanza '{stanza}' not found in {conf_path}")
@@ -362,9 +365,26 @@ def perturb_and_eval(
 
 def _get_time_boundaries(service, golden_query: str) -> tuple[float, float]:
     """Query golden data for min/max _time. Returns (earliest_epoch, latest_epoch)."""
-    stats_query = f"search {golden_query} | stats min(_time) as t_min max(_time) as t_max"
-    stream = service.jobs.oneshot(stats_query, output_mode="json", count=1)
+    # Don't blindly prepend `search ` — golden_query already begins with a
+    # `search` command (or a `|` generating command). Prepending produced
+    # `search search index=...`, which Splunk reads as a literal term match and
+    # returns zero rows. Only add the verb when the query lacks a leading one.
+    q = golden_query.lstrip()
+    if not (q.startswith("search ") or q.startswith("|")):
+        q = f"search {q}"
+    stats_query = f"{q} | stats min(_time) as t_min max(_time) as t_max"
+    # earliest_time="0": scan all time, not the dispatch default window. A
+    # golden dataset whose events predate the default window (e.g. BOTSv3's
+    # 2018 data) would otherwise return zero rows and IndexError below.
+    stream = service.jobs.oneshot(
+        stats_query, earliest_time="0", latest_time="now",
+        output_mode="json", count=1,
+    )
     rows = _read_json_results(stream)
+    if not rows or rows[0].get("t_min") in (None, ""):
+        raise ValueError(
+            f"golden query returned no time boundaries (no events in window): {golden_query}"
+        )
     row = rows[0]
     return float(row["t_min"]), float(row["t_max"])
 
