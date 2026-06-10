@@ -2,7 +2,7 @@
 
 An adversarial eval harness for Splunk detection logic — proposes, validates, and sometimes refuses to tune.
 
-**[Devpost](https://devpost.com/software/squelch)** · **[Demo video](https://youtu.be/-zxHK_j7lZE)**
+**[Devpost](https://devpost.com/software/squelch)** · **[Demo video](https://youtu.be/u14nCE6buaQ)**
 
 ---
 
